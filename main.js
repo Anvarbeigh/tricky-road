@@ -1,6 +1,8 @@
 import * as THREE from './vendor/three.module.js';
+import { mergeGeometries } from './vendor/addons/utils/BufferGeometryUtils.js';
 import { platform } from './platform.js';
 import { t, setLang, applyTexts } from './i18n.js';
+import { icon, fillIcons } from './icons.js';
 import { audio } from './audio.js';
 import { initFx, fx } from './fx.js';
 import { makeCar, stepCar, carCenter, carAngle, carSpeed, DT, WHEEL_R } from './physics.js';
@@ -80,8 +82,15 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.5 : 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
-const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-20, 40, 30); scene.add(sun);
-const hemi = new THREE.HemisphereLight(0xdfefff, 0x6a7a5a, 1.1); scene.add(hemi);
+const SHADOWS = !isTouch;    // phones keep the blob shadows only
+const sun = new THREE.DirectionalLight(0xfff0d8, 2.75); sun.position.set(-20, 40, 30); scene.add(sun); scene.add(sun.target);
+if (SHADOWS) {
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
+  Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 22, bottom: -22, near: 1, far: 140 }); sun.shadow.camera.updateProjectionMatrix();
+}
+const castAll = (root) => { if (SHADOWS) root.traverse((o) => { if (o.isMesh && !o.material.isMeshBasicMaterial && !o.material.transparent) { o.castShadow = true; o.receiveShadow = true; } }); };
+const hemi = new THREE.HemisphereLight(0xdfefff, 0x6a7a5a, 1.0); scene.add(hemi);
 initFx(scene);
 const world = new THREE.Group(); scene.add(world);          // everything that belongs to the current level
 const bg = new THREE.Group(); scene.add(bg);                 // hills and clouds, parallax
@@ -233,6 +242,124 @@ function scatterDecor(pts, w) {
     }
   }
 }
+// ---- scenery: a back meadow strip with clustered midground props, a lower front ledge with foreground props
+// (it hides the big dirt cliff), all merged per material so the whole layer costs a handful of draw calls.
+const LOWFX = isTouch;      // phones: fewer props
+function mergeStatic(meshes) {
+  const byMat = new Map();
+  for (const m of meshes) m.traverse((o) => {
+    if (!o.isMesh) return;
+    o.updateWorldMatrix(true, false);
+    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'color') g.deleteAttribute(k);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    g.applyMatrix4(o.matrixWorld);
+    const key = o.material.uuid; if (!byMat.has(key)) byMat.set(key, { mat: o.material, gs: [] }); byMat.get(key).gs.push(g);
+  });
+  const out = new THREE.Group();
+  for (const { mat: mm, gs } of byMat.values()) {
+    const vc = gs.some((g) => g.attributes.color); if (vc && !gs.every((g) => g.attributes.color)) continue;
+    const merged = mergeGeometries(gs, false); if (merged) out.add(new THREE.Mesh(merged, mm));
+    gs.forEach((g) => g.dispose());
+  }
+  return out;
+}
+const ico = (color, sx, sy, sz, x, y, z, flat = true) => { const m = new THREE.Mesh(GEO.sph, mat(color, flat ? { flatShading: true } : {})); m.scale.set(sx, sy, sz); m.position.set(x, y, z); return m; };
+const cone = (color, r, h, x, y, z) => { const m = new THREE.Mesh(GEO.cone, mat(color, { flatShading: true })); m.scale.set(r, h, r); m.position.set(x, y + h / 2, z); return m; };
+const cyl = (color, r, h, x, y, z) => { const m = new THREE.Mesh(GEO.cyl, mat(color)); m.scale.set(r, h, r); m.position.set(x, y + h / 2, z); return m; };
+function fence(x, y, z, len, col = 0xa8743e) {
+  const g = new THREE.Group();
+  for (let i = 0; i <= len; i += 1.4) g.add(box(0.16, 1.0, 0.16, shade(col, 0.85), x + i, y + 0.5, z));
+  g.add(box(len + 0.2, 0.14, 0.08, col, x + len / 2, y + 0.75, z + 0.06), box(len + 0.2, 0.14, 0.08, col, x + len / 2, y + 0.4, z + 0.06));
+  return g;
+}
+function bush(x, y, z, s, col) { const g = new THREE.Group(); g.add(ico(col, 0.9 * s, 0.7 * s, 0.8 * s, x, y + 0.4 * s, z), ico(shade(col, 1.12), 0.65 * s, 0.55 * s, 0.6 * s, x + 0.6 * s, y + 0.35 * s, z + 0.2), ico(shade(col, 0.88), 0.6 * s, 0.5 * s, 0.6 * s, x - 0.6 * s, y + 0.3 * s, z + 0.1)); return g; }
+function rock(x, y, z, s, col) { const m = ico(col, 1.1 * s, 0.7 * s, 0.9 * s, x, y + 0.25 * s, z); m.rotation.y = x; return m; }
+function flowers(x, y, z, n, rnd) {
+  const g = new THREE.Group();
+  for (let i = 0; i < n; i++) { const c = [0xffffff, 0xffd43b, 0xff8fab, 0xb197fc][Math.floor(rnd() * 4)], fx0 = x + (rnd() - 0.5) * 1.6, fz = z + (rnd() - 0.5) * 0.8; g.add(box(0.05, 0.32, 0.05, 0x3f9f4a, fx0, y + 0.16, fz), box(0.2, 0.08, 0.2, c, fx0, y + 0.34, fz)); }
+  return g;
+}
+function tuft(x, y, z, col) { const g = new THREE.Group(); for (const [dx, h, r] of [[-0.15, 0.5, 0.35], [0.05, 0.7, -0.1], [0.22, 0.45, -0.4]]) { const c = cone(col, 0.09, h, x + dx, y, z); c.rotation.z = r; g.add(c); } return g; }
+function barn(x, y, z) {
+  const g = new THREE.Group();
+  g.add(box(4.2, 2.8, 3, 0xc8402e, x, y + 1.4, z));
+  g.add(prism([[-2.4, 0], [2.4, 0], [0, 1.7]], 3.2, 0x8a8f9a, x, y + 2.8, z));
+  g.add(box(1.4, 1.9, 0.1, 0xf4ead2, x, y + 0.95, z + 1.52), box(1.2, 0.12, 0.12, 0xf4ead2, x, y + 0.95, z + 1.58));
+  return g;
+}
+function silo(x, y, z) { const g = new THREE.Group(); g.add(cyl(0xd8dde6, 1.1, 5.2, x, y, z), ico(0xc0c6d2, 1.12, 0.9, 1.12, x, y + 5.2, z, false), cyl(0xc8402e, 1.13, 0.35, x, y + 3.6, z)); return g; }
+function windmill(x, y, z) {
+  const g = new THREE.Group(); g.add(prism([[-0.9, 0], [0.9, 0], [0.35, 5.5], [-0.35, 5.5]], 0.9, 0x9a6a3a, x, y, z));
+  for (let i = 0; i < 4; i++) { const b = box(0.4, 2.6, 0.08, 0xf4ead2, 0, 1.3, 0); const p = new THREE.Group(); p.add(b); p.rotation.z = i * Math.PI / 2 + 0.4; p.position.set(x, y + 5.4, z + 0.55); g.add(p); }
+  return g;
+}
+function shopFront(x, y, z, rnd) {
+  const g = new THREE.Group(), w0 = 3 + rnd() * 2, h = 2.6 + rnd() * 1.6, c = [0xff8a5c, 0x5cc8ff, 0xffd166, 0x9b8cff, 0x63d9a0][Math.floor(rnd() * 5)];
+  g.add(box(w0, h, 1.2, 0xeef1fa, x, y + h / 2, z), box(w0 * 0.8, h * 0.45, 0.06, 0x9fd8ff, x, y + h * 0.35, z + 0.62), box(w0 + 0.2, 0.5, 0.5, c, x, y + h * 0.78, z + 0.7));
+  return g;
+}
+function crater(x, y, z, s) { const g = new THREE.Group(); g.add(ico(0x9aa6cc, 1.4 * s, 0.25 * s, 1 * s, x, y, z), ico(0x6c76a0, 0.9 * s, 0.2 * s, 0.6 * s, x, y + 0.08 * s, z + 0.05)); return g; }
+function dish(x, y, z) { const g = new THREE.Group(); g.add(box(0.2, 2.2, 0.2, 0xc8d0e8, x, y + 1.1, z)); const d = new THREE.Mesh(GEO.sph, mat(0xe8ecf8, { flatShading: true })); d.scale.set(1.3, 1.3, 0.35); d.rotation.set(-0.5, 0.6, 0); d.position.set(x, y + 2.5, z); g.add(d); g.add(box(0.12, 0.12, 0.12, 0xff5f5f, x, y + 2.6, z + 0.5)); return g; }
+const aoMat = new THREE.MeshBasicMaterial({ color: 0x1a2a10, transparent: true, opacity: 0.3, depthWrite: false });
+const aoGeo = new THREE.CircleGeometry(1, 14);
+const ao = (x, y, z, r) => { const m = new THREE.Mesh(aoGeo, aoMat); m.rotation.x = -Math.PI / 2; m.scale.set(r * 1.3, r, 1); m.position.set(x, y + 0.03, z); return m; };
+function scenery(pts, w) {
+  let seed = Math.floor(pts[0][0] * 17 + pts.length * 3 + 5) | 1;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const yAt = (x) => { for (let i = 0; i + 1 < pts.length; i++) if (x >= pts[i][0] && x <= pts[i + 1][0]) { const k = (x - pts[i][0]) / Math.max(1e-6, pts[i + 1][0] - pts[i][0]); return pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k; } return pts[0][1]; };
+  const items = [], dens = LOWFX ? 1.45 : 1;
+  const X0 = pts[0][0], X1 = pts[pts.length - 1][0];
+  const grass = w.id === 'moon' ? 0x9aa6cc : w.id === 'mall' ? 0xc9cfe2 : shade(w.ground, 0.9);
+  // back strip (behind the road) and the lower front ledge, following the road's profile
+  world.add(ribbon(pts.map(([x, y]) => [x, y - 0.06]), grass, shade(w.dirt, 0.8), { depth: 22, z: -12.7, thick: 0.4 }));
+  const FY = -1.05;  // the front verge sits this far below the road
+  if (X1 - X0 > 3) world.add(ribbon(pts.map(([x, y]) => [x, y + FY]), shade(w.ground, 1.04), w.dirt, { depth: 10, z: 6.85, track: null }));
+  const bushC = w.id === 'farm' ? 0x8cbf4a : 0x4fb04f, rockC = w.id === 'moon' ? 0x7a84aa : w.id === 'mall' ? 0x9aa3b8 : 0x9a9a92;
+  // midground clusters
+  for (let x = X0 + rnd() * 3; x < X1 - 0.5; x += (2.6 + rnd() * 3.2) * dens) {
+    const y = yAt(x), z = -4 - rnd() * 9, r = rnd();
+    if (w.id === 'meadow') {
+      if (r < 0.42) items.push(treeMesh(x, y, 1 + rnd() * 0.9, w)), (items[items.length - 1].position.z = z);
+      else if (r < 0.62) items.push(bush(x, y, z, 0.8 + rnd() * 0.6, bushC));
+      else if (r < 0.77) items.push(fence(x, y, -2.4, 3 + rnd() * 3));
+      else if (r < 0.88) items.push(rock(x, y, z, 0.6 + rnd() * 0.6, rockC));
+      else items.push(flowers(x, y, -2.3 - rnd(), 6, rnd));
+    } else if (w.id === 'farm') {
+      if (r < 0.1) items.push(barn(x, y, -11 - rnd() * 3));
+      else if (r < 0.18) items.push(silo(x, y, -12 - rnd() * 3));
+      else if (r < 0.25) items.push(windmill(x, y, -13));
+      else if (r < 0.45) items.push(fence(x, y, -2.4, 3 + rnd() * 3, 0xd8b07a));
+      else if (r < 0.65) { const hb = new THREE.Group(); for (let i = 0; i < 3; i++) hb.add(box(1.3, 0.9, 1, i % 2 ? 0xe9c46a : 0xdcb455, x + i * 1.35, y + 0.45, z)); hb.add(box(1.3, 0.9, 1, 0xe9c46a, x + 0.7, y + 1.35, z)); items.push(hb); }
+      else if (r < 0.85) items.push(bush(x, y, z, 0.7 + rnd() * 0.5, bushC));
+      else { const tr = treeMesh(x, y, 1, WORLDS[0]); tr.position.z = z; items.push(tr); }
+    } else if (w.id === 'mall') {
+      if (r < 0.45) items.push(shopFront(x, y, -6 - rnd() * 4, rnd));
+      else if (r < 0.65) { const p = new THREE.Group(); p.add(box(0.7, 0.6, 0.7, 0xc96b3a, x, y + 0.3, z), ico(0x3fbf5a, 0.55, 0.9, 0.55, x, y + 1.2, z)); items.push(p); }
+      else if (r < 0.8) items.push(treeMesh(x, y, 1, w)), (items[items.length - 1].position.z = z);
+      else { const bn = new THREE.Group(); bn.add(box(1.8, 0.12, 0.5, 0x9a6a3a, x, y + 0.5, -2.6), box(0.1, 0.5, 0.4, 0x5a6070, x - 0.8, y + 0.25, -2.6), box(0.1, 0.5, 0.4, 0x5a6070, x + 0.8, y + 0.25, -2.6)); items.push(bn); }
+    } else {
+      if (r < 0.35) items.push(crater(x, y, z, 0.8 + rnd() * 0.9));
+      else if (r < 0.48) items.push(dish(x, y, -6 - rnd() * 5));
+      else items.push(rock(x, y, z, 0.5 + rnd() * 0.9, rockC));
+    }
+  }
+  // foreground on the front verge: low, so it never hides the car or a trap
+  for (let x = X0 + 0.5 + rnd() * 1.5; x < X1 - 0.5; x += (1.1 + rnd() * 1.5) * dens) {
+    const y = yAt(x) + FY, z = 2.5 + rnd() * 5, r = rnd(), k = 1 - (z - 2.5) * 0.06;   // nearer = a bit smaller, so nothing gets huge
+    if (w.id === 'moon') { items.push(r < 0.5 ? rock(x, y, z, (0.3 + rnd() * 0.4) * k, rockC) : crater(x, y + 0.05, z, (0.4 + rnd() * 0.4) * k)); continue; }
+    if (w.id === 'mall') { items.push(r < 0.5 ? box(0.9, 0.5 + rnd() * 0.5, 0.6, [0xffb13d, 0x4dabf7, 0xff6b6b][Math.floor(rnd() * 3)], x, y + 0.4, z) : bush(x, y, z, 0.5, 0x3fbf5a)); continue; }
+    if (r < 0.3) items.push(bush(x, y, z, (0.5 + rnd() * 0.4) * k, bushC));
+    else if (r < 0.45) items.push(rock(x, y, z, (0.35 + rnd() * 0.35) * k, rockC));
+    else if (r < 0.75) items.push(flowers(x, y, z, 5, rnd));
+    else items.push(tuft(x, y, z, shade(bushC, 1.1)));
+  }
+  if (w.id !== 'mall') for (let x = X0 + rnd(); x < X1; x += (0.7 + rnd() * 0.9) * dens) items.push(tuft(x, yAt(x) + FY, 2.3 + rnd() * 5.5, shade(w.id === 'moon' ? 0x8a94bc : bushC, 0.95 + rnd() * 0.25)));
+  // soft contact shadows under everything that stands on the ground
+  const aos = [];
+  for (const it of items) { const bb = new THREE.Box3().setFromObject(it); if (!isFinite(bb.min.x)) continue; const r = Math.min(3, Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.6); if (r > 0.25) aos.push(ao((bb.min.x + bb.max.x) / 2, bb.min.y, (bb.min.z + bb.max.z) / 2, r)); }
+  world.add(mergeStatic(items)); if (aos.length) world.add(mergeStatic(aos));
+}
 function flagMesh() {
   const g = new THREE.Group();
   g.add(box(0.14, 3.4, 0.14, 0xf0f0f0, 0, 1.7, 0));
@@ -249,6 +376,21 @@ function flagMesh() {
 function vehicleMesh(kind, skin) {
   const g = new THREE.Group(), b = new THREE.Group(); g.add(b); g.body = b;
   const main = SKINS[skin].body, accent = SKINS[skin].roof, GLASS = 0x7fe3ff, DARK = 0x2a2c38, LIGHT = 0xfff2b0;
+  const glassM = new THREE.MeshLambertMaterial({ color: GLASS, transparent: true, opacity: 0.25, depthWrite: false });
+  const glassify = (m) => { m.material = glassM; return m; };
+  // the driver: a round head with a cap, sitting behind the glass, bobbing with the body
+  const driver = (x, y, cap = 0xff5a3c, helmet = false) => {
+    const d = new THREE.Group(); d.position.set(x, y, 0);
+    const head = new THREE.Mesh(GEO.sph, mat(0xe0976a, { flatShading: true })); head.scale.setScalar(0.24); d.add(head);
+    if (helmet) { const hm = new THREE.Mesh(GEO.sph, new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 })); hm.scale.setScalar(0.34); d.add(hm); }
+    else { d.add(box(0.5, 0.12, 0.46, cap, 0.02, 0.18, 0)); d.add(box(0.22, 0.05, 0.4, cap, 0.28, 0.13, 0)); }
+    for (const zs of [1, -1]) { d.add(box(0.11, 0.11, 0.03, 0xffffff, 0.11, 0.04, zs * 0.22)); d.add(box(0.06, 0.07, 0.03, 0x23242e, 0.14, 0.04, zs * 0.235)); }   // eyes on the side the camera sees
+    d.add(box(0.1, 0.03, 0.03, 0x7a2a1a, 0.13, -0.1, 0.22));
+    d.add(box(0.34, 0.3, 0.42, 0x3a5bd0, -0.04, -0.34, 0));    // shoulders
+    b.add(d); g.driver = d; return d;
+  };
+  // a whip antenna on a spring: it lags behind the body (see updateCar)
+  const antenna = (x, y, z, h = 1.1) => { const a = new THREE.Group(); a.position.set(x, y, z); a.add(box(0.04, h, 0.04, DARK, 0, h / 2, 0)); a.add(box(0.12, 0.12, 0.12, 0xff4a4a, 0, h, 0)); b.add(a); g.antenna = a; };
   const wheels = [];
   const wheel = (x, r, w, y = 0, zs = [-0.62, 0.62]) => {
     for (const z of zs) {
@@ -263,8 +405,11 @@ function vehicleMesh(kind, skin) {
   const arch = (x0, x1, top, r) => [[x0, 0.04], [-0.95 - r, 0.04], ...arc(-0.95, r), [0.95 - r, 0.04], ...arc(0.95, r), [x1, 0.04], ...top];
   if (kind === 'tractor') {
     b.add(prism([[-0.62, 0.3], [1.45, 0.2], [1.6, 0.42], [1.5, 0.86], [-0.62, 0.92]], 1.0, main));          // hood
-    b.add(prism([[-1.3, 0.24], [-0.1, 0.24], [-0.14, 1.24], [-1.1, 1.24]], 1.14, main));                     // closed cab
-    b.add(prism([[-1.0, 0.8], [-0.26, 0.8], [-0.28, 1.14], [-0.92, 1.14]], 1.24, GLASS, 0, 0, 0, { bevel: 0 }));
+    b.add(prism([[-1.3, 0.24], [-0.1, 0.24], [-0.12, 0.8], [-1.22, 0.8]], 1.14, main));                     // cab, open above the waist
+    for (const px of [-1.12, -0.17]) b.add(box(0.12, 0.5, 1.14, main, px, 1.02, 0));
+    b.add(box(1.1, 0.1, 1.14, main, -0.64, 1.22, 0));
+    b.add(glassify(prism([[-1.0, 0.8], [-0.26, 0.8], [-0.28, 1.14], [-0.92, 1.14]], 1.24, GLASS, 0, 0, 0, { bevel: 0 })));
+    driver(-0.64, 1.0, 0x2f9e44);
     b.add(box(1.4, 0.12, 1.34, accent, -0.68, 1.32, 0));
     b.add(box(0.16, 0.56, 0.16, DARK, 0.9, 1.12, 0.2)); b.add(box(0.14, 0.24, 0.9, LIGHT, 1.58, 0.56, 0));
     b.add(box(0.26, 0.22, 1.1, DARK, 1.66, 0.28, 0));
@@ -274,19 +419,26 @@ function vehicleMesh(kind, skin) {
     for (let x = -1.0; x <= 1.2; x += 0.42) b.add(box(0.05, 0.86, 1.3, 0x7b839a, x, 0.8, 0));
     b.add(box(3.1, 0.1, 1.34, main, 0.05, 1.23, 0)); b.add(box(2.7, 0.1, 1.28, main, -0.05, 0.42, 0));
     b.add(box(0.1, 0.9, 0.1, DARK, -1.55, 1.5, 0.55)); b.add(box(0.1, 0.9, 0.1, DARK, -1.55, 1.5, -0.55)); b.add(box(0.12, 0.14, 1.3, main, -1.6, 1.92, 0));
+    driver(-0.3, 1.55, 0xffc531); antenna(1.2, 1.25, 0.5, 0.9);
     wheel(-0.95, 0.38, 0.2, 0, [-0.5, 0.5]); wheel(0.95, 0.38, 0.2, 0, [-0.5, 0.5]);
   } else if (kind === 'buggy') {
     b.add(prism(arch(-1.5, 1.5, [[1.66, 0.3], [1.34, 0.62], [-1.42, 0.62]], 0.6), 1.24, main));
-    b.add(prism([[-0.92, 0.6], [0.72, 0.6], [0.4, 1.22], [-0.7, 1.22]], 1.14, 0xeef4ff, 0, 0, 0, { bevel: 0.05 }));
-    b.add(prism([[-0.74, 0.7], [0.56, 0.7], [0.32, 1.12], [-0.6, 1.12]], 1.26, GLASS, 0, 0, 0, { bevel: 0 }));
-    b.add(box(1.3, 0.08, 1.3, 0xffc531, -0.15, 1.3, 0));
+    b.add(box(1.7, 0.16, 1.3, 0xeef4ff, -0.1, 0.68, 0));
+    const dome = new THREE.Mesh(GEO.sph, glassM); dome.scale.set(0.78, 0.62, 0.62); dome.position.set(-0.15, 0.78, 0); b.add(dome);
+    driver(-0.15, 0.98, 0, true);
+    for (const z of [-0.62, 0.62]) b.add(box(2.6, 0.08, 0.08, 0xffc531, 0, 0.66, z));
+    antenna(-1.2, 0.62, 0.45, 1.4);
+    const dsh = new THREE.Mesh(GEO.sph, mat(0xeef4ff, { flatShading: true })); dsh.scale.set(0.3, 0.3, 0.1); dsh.rotation.y = 1.2; dsh.position.set(-1.2, 1.0, -0.45); b.add(dsh);
     b.add(box(0.26, 0.2, 1.36, DARK, 1.62, 0.2, 0)); b.add(box(0.1, 0.18, 0.3, LIGHT, 1.62, 0.44, 0.42)); b.add(box(0.1, 0.18, 0.3, LIGHT, 1.62, 0.44, -0.42));
     wheel(-0.95, 0.5, 0.42, 0.04, [-0.68, 0.68]); wheel(0.95, 0.5, 0.42, 0.04, [-0.68, 0.68]);
   } else {  // chunky toy pickup
     b.add(prism(arch(-1.55, 1.5, [[1.62, 0.34], [1.42, 0.68], [0.5, 0.74], [-1.55, 0.74]], 0.56), 1.2, main));
-    b.add(prism([[-0.78, 0.7], [0.62, 0.7], [0.3, 1.24], [-0.62, 1.24]], 1.1, accent, 0, 0, 0, { bevel: 0.04 }));
-    b.add(prism([[-0.66, 0.78], [-0.14, 0.78], [-0.14, 1.14], [-0.56, 1.14]], 1.2, GLASS, 0, 0, 0, { bevel: 0 }));
-    b.add(prism([[-0.04, 0.78], [0.5, 0.78], [0.25, 1.14], [-0.04, 1.14]], 1.2, GLASS, 0, 0, 0, { bevel: 0 }));
+    b.add(box(1.04, 0.1, 1.12, accent, -0.17, 1.22, 0));                                                      // roof on pillars, so you see the driver
+    b.add(box(0.12, 0.5, 1.12, accent, -0.7, 0.98, 0)); b.add(box(0.08, 0.46, 1.12, accent, -0.09, 0.98, 0));
+    b.add(prism([[0.5, 0.74], [0.62, 0.74], [0.34, 1.24], [0.24, 1.24]], 1.12, accent, 0, 0, 0, { bevel: 0 }));
+    b.add(glassify(prism([[-0.66, 0.78], [-0.14, 0.78], [-0.14, 1.14], [-0.56, 1.14]], 1.2, GLASS, 0, 0, 0, { bevel: 0 })));
+    b.add(glassify(prism([[-0.04, 0.78], [0.5, 0.78], [0.25, 1.14], [-0.04, 1.14]], 1.2, GLASS, 0, 0, 0, { bevel: 0 })));
+    driver(-0.05, 1.0); antenna(-1.4, 0.74, -0.5);
     b.add(box(0.26, 0.24, 1.36, DARK, 1.66, 0.2, 0)); b.add(box(0.2, 0.24, 1.36, DARK, -1.62, 0.2, 0));
     b.add(box(0.1, 0.2, 0.3, LIGHT, 1.64, 0.48, 0.42)); b.add(box(0.1, 0.2, 0.3, LIGHT, 1.64, 0.48, -0.42));
     b.add(box(0.1, 0.16, 0.26, 0xff4a4a, -1.62, 0.54, 0.44)); b.add(box(0.1, 0.16, 0.26, 0xff4a4a, -1.62, 0.54, -0.44));
@@ -303,7 +455,7 @@ function vehicleMesh(kind, skin) {
 let run = null, car = null, level = null, levelIndex = 0, carMesh = null, ghost = null, ghostRun = null, ghostCar = null, ghostT = 0;
 let dyn = [];          // [{e, mesh, kind}] meshes that follow entity state
 let coinMeshes = [], flag = null, started = false, paused = 0, hold = false, fails = 0, levelTime = 0, finished = false, failing = false;
-let camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = 0, levelsSinceAd = 0, endless = false, endlessDist = 0;
+let hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = 0, levelsSinceAd = 0, endless = false, endlessDist = 0;
 
 function clearGroup(g) {
   while (g.children.length) { const c = g.children.pop(); c.traverse((o) => { if (o.geometry && !Object.values(GEO).includes(o.geometry)) o.geometry.dispose(); }); }
@@ -321,7 +473,7 @@ function ridge(w, layer, z, base) {
     else { const h = base + (Math.sin(x * 0.045 + layer * 2) + 1) * 4 + rnd() * 1.6; sh.lineTo(x, h); x += 6 + rnd() * 5; }
   }
   sh.lineTo(X1, -60);
-  const col = mix(w.hill, w.fog, layer === 0 ? 0.68 : 0.32);
+  const col = layer === 2 ? shade(w.hill, 1.08) : mix(w.hill, w.fog, layer === 0 ? 0.68 : 0.32);
   const m = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshBasicMaterial({ color: col, fog: false }));
   m.position.z = z;
   return m;
@@ -331,7 +483,7 @@ function buildBackground(w) {
   scene.background = new THREE.Color(w.sky);
   scene.fog = new THREE.Fog(w.fog, 70, 190);
   hemi.groundColor.set(mix(w.ground, 0x888888, 0.4)); hemi.color.set(w.id === 'moon' ? 0xb0bcff : 0xeef6ff);
-  bg.add(ridge(w, 0, -95, 4), ridge(w, 1, -60, -1));
+  bg.add(ridge(w, 0, -95, 4), ridge(w, 1, -60, -1), ridge(w, 2, -34, -3));
   const disc = new THREE.Mesh(GEO.sph, new THREE.MeshBasicMaterial({ color: w.id === 'moon' ? 0xdfe6ff : 0xfff6c8, fog: false })); disc.scale.setScalar(w.id === 'moon' ? 6 : 7); disc.position.set(52, 34, -120); bg.add(disc);
   if (w.id !== 'moon') for (let i = 0; i < 12; i++) {
     const c = new THREE.Group(), white = new THREE.MeshBasicMaterial({ color: 0xfffdf6, fog: false });
@@ -354,6 +506,7 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
         world.add(ribbon(it.pts, it.ice ? 0xd4f3ff : top, it.ice ? 0x7fb6d6 : side, { track: it.ice ? null : w.track }));
         if (it.ice) world.add(signMesh(it.pts[0][0] + 1, it.pts[0][1], t('s_ice')));
         scatterDecor(it.pts, w);
+        if (!it.ice) scenery(it.pts, w);
         break;
       }
       case 'platform': world.add(ribbon(it.pts, 0xd9a05a, 0x8a5a2b, { depth: 2.6, thick: 0.35 })); break;
@@ -381,6 +534,11 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
         }
         world.add(g);
         world.add(box(it.x1 - it.x0 + 0.4, 0.12, 0.14, 0x5a3a20, (it.x0 + it.x1) / 2, it.y - 0.34, 1.2), box(it.x1 - it.x0 + 0.4, 0.12, 0.14, 0x5a3a20, (it.x0 + it.x1) / 2, it.y - 0.34, -1.2));
+        for (const bx of [it.x0 - 0.25, it.x1 + 0.25]) for (const bz of [1.35, -1.35]) {
+          world.add(box(0.36, 1.1, 0.36, 0x2a2c38, bx, it.y + 0.45, bz));
+          const sp = stripePlane(0.36, 0.9, bx, it.y + 0.5, bz + 0.19); world.add(sp);
+          world.add(box(0.44, 0.12, 0.44, 0x2a2c38, bx, it.y + 1.02, bz));
+        }
         dyn.push({ kind: 'bridge', it, planks }); break;
       }
       case 'trapdoor': {
@@ -419,9 +577,10 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
     world.add(box(x1 - x0, 80, 0.2, shade(side, 0.24), (x0 + x1) / 2, minY - 0.5 - 40, -1.75));
   }
   flag = flagMesh(); flag.position.set(run.finishX, groundYAt(run.finishX), 0); world.add(flag);
-  landed = true; lastVy = 0; pitchV = 0; pitch = 0; bounce = 0; bounceV = 0; prevSpeed = 0; camW = 0;
+  landed = true; lastVy = 0; lastGroundY = level.start[1]; pitchV = 0; pitch = 0; bounce = 0; bounceV = 0; prevSpeed = 0; camW = 0;
   if (carMesh) world.remove(carMesh);
   carMesh = vehicleMesh(w.vehicle, state.skin); world.add(carMesh); world.add(blob); debris.length = 0;
+  castAll(world);
   buildBackground(w);
   camX = 0; camY = 0;
   $('lvlText').textContent = endless ? t('endless') : t('levelShort', { n: idx + 1 });
@@ -469,6 +628,7 @@ function updateCar(dt = 0) {
   // suspension: the body noses up on gas, dives on brake, squashes when it lands
   const sp = carSpeed(car), ac = (sp - prevSpeed) / Math.max(dt, 1e-3); prevSpeed = sp;
   const grounded = car.onGround > 0;
+  if (grounded) lastGroundY = c.y;
   const target = grounded ? Math.max(-0.14, Math.min(0.14, ac * 0.009)) : 0;
   pitchV += (target - pitch) * 90 * dt; pitchV *= Math.exp(-11 * dt); pitch += pitchV * dt;
   if (grounded && !landed && lastVy < -4) {
@@ -482,12 +642,17 @@ function updateCar(dt = 0) {
   const b = carMesh.body;
   b.rotation.z = pitch; b.position.y = Math.max(-0.2, bounce * 0.3);
   const q = Math.max(-0.16, Math.min(0.12, bounce * 0.5)); b.scale.set(1 - q * 0.5, 1 + q, 1);
+  if (carMesh.antenna) { antV += (-(pitchV * 0.6 + bounceV * 0.25) - antA * 60) * dt; antV *= Math.exp(-4 * dt); antA += antV * dt * 8; carMesh.antenna.rotation.z = Math.max(-0.9, Math.min(0.9, antA)); }
+  if (carMesh.driver) carMesh.driver.rotation.z = -pitch * 1.6 + Math.max(-0.3, Math.min(0.3, ac * -0.006));
+  // hard braking on the ground kicks up dust at the rear wheel
+  if (grounded && !hold && sp > 5 && ac < -6 && Math.random() < 0.5) fx.dust({ x: car.p[0].x, y: car.p[0].y - WHEEL_R + 0.1, z: 0.7 }, 0xd8cdb0);
 }
 
 // ---------------------------------------------------------------------------------------------------------
 // Game flow
 // ---------------------------------------------------------------------------------------------------------
 function startLevel(idx) {
+  attract = false;
   endless = false; fails = 0; $('helpers').innerHTML = '';
   spawnLevel(idx);
   $('hud').classList.remove('hidden');
@@ -509,19 +674,32 @@ function fail(reason) {
   fx.shake(reason === 'fell' ? 0.4 : 0.8);
   if (reason !== 'fell') { spawnDebris(c.x, c.y, [SKINS[state.skin].body, 0x23242e, 0xe6e8f0, 0x7fe3ff], 12); camW *= 0.84; }
   $('flash').style.opacity = 0.45; setTimeout(() => { $('flash').style.opacity = 0; }, 120);
-  toast(t(reason === 'fell' ? 'fell' : reason), 900);
+  stamp(level.hint ? t('gotcha') : t(reason === 'fell' ? 'fell' : reason)); $('failChip').classList.remove('hit'); void $('failChip').offsetWidth; $('failChip').classList.add('hit');
+  if (reason !== 'fell') hitStop = 0.09;
   // the crash itself is the joke: the car gets thrown, spinning, and stays in frame
   if (reason !== 'fell') for (const q of car.p) { const sgn = q.x > c.x ? 1 : -1; q.vx = q.vx * 0.3 - 3; q.vy = 7 + sgn * 4; }
-  if (level.hint) { toast(t('gotcha'), 900); $('tut').textContent = t(level.hint); $('tut').classList.remove('hidden'); }
+  if (level.hint) { $('tut').textContent = t(level.hint); $('tut').classList.remove('hidden'); }
   if (endless) { setTimeout(endlessOver, 700); return; }
   if (fails >= 3 && platform.hasRewarded) showHelpers();
   setTimeout(() => { restart(); started = true; platform.gameplayStart(); }, 750);
 }
+function stamp(text) { const el = $('stamp'); el.firstElementChild.textContent = text; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
+// a coin flies from the road to the coin chip
+const _v = new THREE.Vector3();
+function flyCoin(x, y) {
+  _v.set(x, y, 0).project(camera);
+  const el = document.createElement('div'); el.className = 'flycoin';
+  el.style.left = ((_v.x + 1) / 2 * innerWidth) + 'px'; el.style.top = ((1 - _v.y) / 2 * innerHeight) + 'px';
+  document.body.appendChild(el);
+  const r = $('coinChip').getBoundingClientRect(), dx = r.left + 18 - parseFloat(el.style.left), dy = r.top + r.height / 2 - parseFloat(el.style.top);
+  requestAnimationFrame(() => requestAnimationFrame(() => { el.style.transform = `translate(${dx}px, ${dy}px) scale(.7)`; }));
+  setTimeout(() => { el.remove(); setCoinsUI(); }, 520);
+}
 function showHelpers() {
   const h = $('helpers'); h.innerHTML = '';
-  const b1 = document.createElement('button'); b1.className = 'btn ' + platform.adColor; b1.textContent = t('showTrap');
+  const b1 = document.createElement('button'); b1.className = 'btn ' + platform.adColor; b1.innerHTML = icon('video') + ' ' + t('showTrap');
   b1.onclick = () => rewarded(() => startGhost());
-  const b2 = document.createElement('button'); b2.className = 'btn ' + platform.adColor; b2.textContent = t('skipLevel');
+  const b2 = document.createElement('button'); b2.className = 'btn ' + platform.adColor; b2.innerHTML = icon('video') + ' ' + t('skipLevel');
   b2.onclick = () => rewarded(() => { state.stars[levelIndex] = Math.max(starsOf(levelIndex), 1); save(true); goNext(); });
   h.append(b1, b2);
 }
@@ -542,15 +720,15 @@ function win() {
   state.cur = Math.min(LEVELS.length - 1, levelIndex + 1);
   save(true);
   $('winTitle').textContent = stars === 3 ? t('perfect') : t('done');
-  $('winStars').innerHTML = [1, 2, 3].map((i) => `<span class="${i <= stars ? '' : 'off'}">★</span>`).join('');
+  $('winStars').innerHTML = [1, 2, 3].map((i) => `<span class="${i <= stars ? '' : 'off'}">${icon('star')}</span>`).join('');
   $('winCoins').textContent = t('earned', { n: earned });
   const btns = $('winBtns'); btns.innerHTML = '';
   if (platform.hasRewarded) {
-    const b = document.createElement('button'); b.className = 'btn ' + platform.adColor; b.textContent = t('doubleCoins');
+    const b = document.createElement('button'); b.className = 'btn ' + platform.adColor; b.innerHTML = icon('video') + ' ' + t('doubleCoins');
     b.onclick = () => rewarded(() => { state.coins += earned; setCoinsUI(); save(true); b.disabled = true; $('winCoins').textContent = t('earned', { n: earned * 2 }); });
     btns.appendChild(b);
   }
-  const n = document.createElement('button'); n.className = 'btn green'; n.textContent = t('next') + ' ▶';
+  const n = document.createElement('button'); n.className = 'btn green'; n.innerHTML = t('next') + ' ' + icon('next');
   n.onclick = () => { closePanels(true); goNext(); };
   btns.appendChild(n);
   setTimeout(() => openPanel('winPanel'), 650);
@@ -566,10 +744,10 @@ async function goNext() {
   startLevel(nextIdx);
 }
 function showEnd() {
-  $('endTitle').textContent = '🏆';
+  $('endTitle').innerHTML = icon('trophy');
   $('endBody').textContent = t('allDone');
   const b = $('endBtns'); b.innerHTML = '';
-  const e = document.createElement('button'); e.className = 'btn orange'; e.textContent = '🏃 ' + t('endless'); e.onclick = () => { closePanels(true); startEndless(); }; b.appendChild(e);
+  const e = document.createElement('button'); e.className = 'btn orange'; e.innerHTML = icon('run') + ' ' + t('endless'); e.onclick = () => { closePanels(true); startEndless(); }; b.appendChild(e);
   const l = document.createElement('button'); l.className = 'btn'; l.textContent = t('levels'); l.onclick = () => { closePanels(true); openLevels(); }; b.appendChild(l);
   openPanel('endPanel');
 }
@@ -630,6 +808,7 @@ function endlessLevel() {
 }
 let ENDLESS_API = null;
 function startEndless() {
+  attract = false;
   endless = true; fails = 0; endlessDist = 0; $('helpers').innerHTML = '';
   spawnLevel(0, endlessLevel());
   $('hud').classList.remove('hidden'); $('tut').classList.add('hidden');
@@ -643,7 +822,7 @@ function endlessOver() {
   $('endTitle').textContent = best ? t('newBest') : t('runOver');
   $('endBody').textContent = t('distance', { n: d }) + ' · ' + t('best', { n: state.best }) + (earned ? ' · ' + t('earned', { n: earned }) : '');
   const b = $('endBtns'); b.innerHTML = '';
-  const r = document.createElement('button'); r.className = 'btn green'; r.textContent = '↻ ' + t('retry'); r.onclick = async () => { closePanels(true); levelsSinceAd++; if (levelsSinceAd >= 2) await maybeInterstitial(); startEndless(); }; b.appendChild(r);
+  const r = document.createElement('button'); r.className = 'btn green'; r.innerHTML = icon('retry') + ' ' + t('retry'); r.onclick = async () => { closePanels(true); levelsSinceAd++; if (levelsSinceAd >= 2) await maybeInterstitial(); startEndless(); }; b.appendChild(r);
   const l = document.createElement('button'); l.className = 'btn'; l.textContent = t('levels'); l.onclick = () => { closePanels(true); endless = false; openLevels(); }; b.appendChild(l);
   openPanel('endPanel');
 }
@@ -663,7 +842,7 @@ function renderLevels() {
     const b = document.createElement('button'); b.className = 'btn' + (wi === tabWorld ? ' on' : '');
     const first = LEVELS.findIndex((l) => l.w === wi);
     const locked = first > firstOpen;
-    b.textContent = (locked ? '🔒 ' : '') + t('world')[wi];
+    b.innerHTML = (locked ? icon('lock') + ' ' : '') + t('world')[wi];
     b.onclick = () => { if (locked) { toast(t('lockedWorld', { w: t('world')[wi - 1] })); return; } tabWorld = wi; renderLevels(); audio.play('click', { vol: 0.5 }); };
     tabs.appendChild(b);
   });
@@ -673,21 +852,21 @@ function renderLevels() {
     const n = LEVELS.filter((x, j) => x.w === tabWorld && j < i).length + 1;
     const locked = i > firstOpen;
     const c = document.createElement('div'); c.className = 'cell' + (locked ? ' locked' : '') + (i === levelIndex && !endless ? ' cur' : '');
-    c.innerHTML = `${locked ? '🔒' : n}<span class="st">${'★'.repeat(starsOf(i))}</span>`;
+    c.innerHTML = `${locked ? icon('lock') : n}<span class="st">${[1, 2, 3].map((k) => `<i class="${k <= starsOf(i) ? '' : 'off'}">${icon('star')}</i>`).join('')}</span>`;
     c.onclick = () => { if (locked) { toast(t('locked')); return; } closePanels(true); audio.play('click', { vol: 0.6 }); startLevel(i); };
     grid.appendChild(c);
   });
   const extra = $('extraRows'); extra.innerHTML = '';
   const row = document.createElement('div'); row.className = 'row';
-  row.innerHTML = `<div class="ico">🏃</div><div class="txt"><b>${t('endless')}</b><span>${t('endlessDesc')} · ${t('best', { n: state.best })}</span></div>`;
+  row.innerHTML = `<div class="ico">${icon('run')}</div><div class="txt"><b>${t('endless')}</b><span>${t('endlessDesc')} · ${t('best', { n: state.best })}</span></div>`;
   const pb = document.createElement('button'); pb.className = 'btn orange'; pb.textContent = t('play'); pb.onclick = () => { closePanels(true); startEndless(); };
   row.appendChild(pb); extra.appendChild(row);
   const g = document.createElement('div'); g.className = 'row';
-  g.innerHTML = `<div class="ico">🚗</div><div class="txt"><b>${t('garage')}</b><span>${t('skins')[state.skin]}</span></div>`;
+  g.innerHTML = `<div class="ico">${icon('car')}</div><div class="txt"><b>${t('garage')}</b><span>${t('skins')[state.skin]}</span></div>`;
   const gb = document.createElement('button'); gb.className = 'btn purple'; gb.textContent = t('garage'); gb.onclick = () => renderGarage();
   g.appendChild(gb); extra.appendChild(g);
   const gift = document.createElement('div'); gift.className = 'row';
-  gift.innerHTML = `<div class="ico">🎁</div><div class="txt"><b>${t('gift')}</b><span>${giftAvailable() ? t('giftDay', { n: nextGiftDay() + 1 }) : t('giftTaken')}</span></div>`;
+  gift.innerHTML = `<div class="ico">${icon('gift')}</div><div class="txt"><b>${t('gift')}</b><span>${giftAvailable() ? t('giftDay', { n: nextGiftDay() + 1 }) : t('giftTaken')}</span></div>`;
   const gbtn = document.createElement('button'); gbtn.className = 'btn pink'; gbtn.textContent = t('gift'); gbtn.disabled = !giftAvailable(); gbtn.onclick = () => renderGift();
   gift.appendChild(gbtn); extra.appendChild(gift);
 }
@@ -698,9 +877,9 @@ function renderGarage() {
     const row = document.createElement('div'); row.className = 'row' + (on ? ' on' : '');
     row.innerHTML = `<div class="ico"><div class="skin" style="background:#${s.body.toString(16).padStart(6, '0')};border-color:#${s.roof.toString(16).padStart(6, '0')}"></div></div><div class="txt"><b>${t('skins')[i]}</b><span>${owned ? (on ? t('equipped') : t('owned')) : t('price', { n: s.price })}</span></div>`;
     const b = document.createElement('button');
-    if (owned) { b.className = 'btn green'; b.textContent = on ? '✓' : t('equip'); b.disabled = on; b.onclick = () => { state.skin = i; save(); audio.play('click', { vol: 0.6 }); renderGarage(); }; }
+    if (owned) { b.className = 'btn green'; b.innerHTML = on ? icon('check') : t('equip'); b.disabled = on; b.onclick = () => { state.skin = i; save(); audio.play('click', { vol: 0.6 }); renderGarage(); }; }
     else if (state.coins >= s.price) { b.className = 'btn orange'; b.textContent = t('buy'); b.onclick = () => { state.coins -= s.price; state.skins.push(i); state.skin = i; setCoinsUI(); save(true); audio.play('buy'); renderGarage(); }; }
-    else if (platform.hasRewarded && i === 1) { b.className = 'btn ' + platform.adColor; b.textContent = t('watchToUnlock'); b.onclick = () => rewarded(() => { state.skins.push(i); state.skin = i; save(true); renderGarage(); }); }
+    else if (platform.hasRewarded && i === 1) { b.className = 'btn ' + platform.adColor; b.innerHTML = icon('video') + ' ' + t('watchToUnlock'); b.onclick = () => rewarded(() => { state.skins.push(i); state.skin = i; save(true); renderGarage(); }); }
     else { b.className = 'btn grey'; b.textContent = t('price', { n: s.price }); b.disabled = true; }
     row.appendChild(b); list.appendChild(row);
   });
@@ -713,7 +892,7 @@ const nextGiftDay = () => (state.giftDay === yesterday() ? Math.min(state.giftSt
 function renderGift() {
   const d = nextGiftDay(), amount = GIFT[d];
   const b = $('giftBody');
-  b.innerHTML = `<div class="stars">🎁</div><div class="note">${t('giftText', { a: GIFT[0], b: GIFT[1], c: GIFT[2] })}</div><div class="note"><b>${t('giftDay', { n: d + 1 })}: +${amount}</b></div>`;
+  b.innerHTML = `<div class="stars gifticon">${icon('gift')}</div><div class="note">${t('giftText', { a: GIFT[0], b: GIFT[1], c: GIFT[2] })}</div><div class="note"><b>${t('giftDay', { n: d + 1 })}: +${amount}</b></div>`;
   const take = document.createElement('button'); take.className = 'btn green big'; take.textContent = t('take') + ` +${amount}`;
   take.onclick = () => { state.coins += amount; state.giftDay = today(); state.giftStreak = d + 1; setCoinsUI(); save(true); audio.play('coin'); closePanels(); };
   b.appendChild(take);
@@ -733,9 +912,9 @@ function renderSettings(asPause) {
     }
   }
   if (asPause) {
-    const r = document.createElement('button'); r.className = 'btn green big'; r.textContent = '▶ ' + t('continue'); r.onclick = () => closePanels(); b.appendChild(r);
-    const rs = document.createElement('button'); rs.className = 'btn orange big'; rs.textContent = '↻ ' + t('retry'); rs.onclick = () => { closePanels(); fails++; $('failText').textContent = fails; restart(); }; b.appendChild(rs);
-    const l = document.createElement('button'); l.className = 'btn big'; l.textContent = '☰ ' + t('levels'); l.onclick = () => { closePanels(true); openLevels(); }; b.appendChild(l);
+    const r = document.createElement('button'); r.className = 'btn green big'; r.innerHTML = icon('play') + ' ' + t('continue'); r.onclick = () => closePanels(); b.appendChild(r);
+    const rs = document.createElement('button'); rs.className = 'btn orange big'; rs.innerHTML = icon('retry') + ' ' + t('retry'); rs.onclick = () => { closePanels(); fails++; $('failText').textContent = fails; restart(); }; b.appendChild(rs);
+    const l = document.createElement('button'); l.className = 'btn big'; l.innerHTML = icon('menu') + ' ' + t('levels'); l.onclick = () => { closePanels(true); openLevels(); }; b.appendChild(l);
   }
   openPanel('settingsPanel');
 }
@@ -802,12 +981,12 @@ function step() {
   }
   if (endless) endlessDist = Math.max(endlessDist, carCenter(car).x);
   for (const ev of run.events) {
-    if (ev.name === 'coin') { audio.play('coin', { vol: 0.7 }); fx.sparkle({ x: ev.x, y: ev.y + 1, z: 0 }, 0xffe27a, 10); state.coins += 1; setCoinsUI(); }
+    if (ev.name === 'coin') { audio.play('coin', { vol: 0.7 }); fx.sparkle({ x: ev.x, y: ev.y + 1, z: 0 }, 0xffe27a, 14); fx.burst({ x: ev.x, y: ev.y + 1, z: 0.3 }, 0xffd23a, 8, 3); state.coins += 1; flyCoin(ev.x, ev.y + 1); }
     else if (ev.name === 'win') win();
     else if (ev.name === 'crack') audio.play('crack');
     else if (ev.name === 'fall' || ev.name === 'thud') { audio.play('thud'); fx.shake(0.3); }
     else if (ev.name === 'click') audio.play('click');
-    else if (ev.name === 'flagrun') { audio.play('jump', { vol: 0.8 }); toast('😜', 700); }
+    else if (ev.name === 'flagrun') { audio.play('jump', { vol: 0.8 }); stamp(t('gotcha')); }
     else if (ev.name === 'boost') audio.play('whoosh');
     else if (ev.name === 'door') audio.play('unlock', { vol: 0.6 });
     else if (ev.name === 'rumble') audio.play('crack', { rate: 0.6 });
@@ -839,29 +1018,47 @@ function updateCamera(dt) {
   const sp = carSpeed(follow), s01 = Math.min(1, Math.abs(sp) / 15);
   const aspect = camera.aspect, vfov = camera.fov * Math.PI / 180;
   // framing: big car near the left, road about 2/3 down; pulling back with speed keeps the next trap in view
-  const wantW = aspect > 1 ? 17 + s01 * 6 : 11 + s01 * 3;
+  const wantW = aspect > 1 ? 12.5 + s01 * 4.6 : 7.8 + s01 * 2.1;
   camW = camW ? camW + (wantW - camW) * Math.min(1, dt * 2.2) : wantW;
   const H = camW / aspect;
   const dist = Math.max(8, (camW / 2) / Math.tan(vfov / 2) / aspect);
-  const targetX = c.x + camW * 0.23 + Math.max(0, sp) * 0.06, targetY = Math.max(c.y, level.killY + 2) + H * (aspect > 1 ? 0.15 : 0.01);
+  const targetX = c.x + camW * 0.18 + Math.max(0, sp) * 0.06, targetY = Math.max(c.y, level.killY + 2, lastGroundY - 1.6) + H * (aspect > 1 ? 0.15 : 0.04) - (attract ? H * (aspect > 1 ? 0.06 : 0.04) : 0);
   if (!camX && !camY) { camX = targetX; camY = targetY; }
   camX += (targetX - camX) * Math.min(1, dt * 6);
   camY += (targetY - camY) * Math.min(1, dt * 4);
   const sh = fx.shakeOffset();
   camera.position.set(camX + (Math.random() - 0.5) * sh, camY + dist * 0.14 + (Math.random() - 0.5) * sh, dist);
   camera.lookAt(camX, camY, 0);
+  if (SHADOWS) { sun.position.set(camX - 20, camY + 40, 30); sun.target.position.set(camX, camY, 0); }
   bg.position.x = camX * 0.72; bg.position.y = camY * 0.5 + (aspect > 1 ? 0 : H * 0.24);
   // how far along the road
   if (run && !endless) { const k = Math.max(0, Math.min(1, (c.x - level.start[0]) / (run.finishX - level.start[0]))); $('progCar').style.left = (k * 100) + '%'; }
+}
+// title screen attract loop: level 1 with the gas floored, so the SAFE BRIDGE collapses on a loop behind the logo
+let attract = false, attractT = 0;
+function attractStep(dt) {
+  acc += Math.min(dt, 0.05);
+  while (acc >= DT) {
+    acc -= DT; simT += DT;
+    const touched = stepCar(car, true, run.colliders); car.hold = true; car.gravityScale = run.gravityScale;
+    updateLevel(run, car, DT, touched);
+    wheelSpin += Math.abs(carSpeed(car)) * DT / WHEEL_R;
+    for (const ev of run.events) if (ev.name === 'crack' || ev.name === 'fall' || ev.name === 'thud') fx.shake(0.25);
+    run.events.length = 0;
+    if (attractT > 0) { attractT -= DT; if (attractT <= 0) { spawnLevel(0); return; } }
+    else if (car.crashed || carCenter(car).y < groundYAt(carCenter(car).x) - 2.5 && carCenter(car).y < lastGroundY - 2.5) { attractT = 1.1; stamp(t('gotcha')); }
+  }
 }
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (started && !paused && run) {
     acc += dt;
-    while (acc >= DT) { step(); acc -= DT; simT += DT; }
+    if (hitStop > 0) { hitStop -= dt; acc = 0; }
+    else while (acc >= DT) { step(); acc -= DT; simT += DT; }
     audio.engine(hold ? 1 : 0, Math.min(1, Math.abs(carSpeed(car)) / 15), !finished && !failing);
   }
+  else if (attract && run && !paused) attractStep(dt);
   if (run) { updateCar(dt); syncDyn(); updateCamera(dt); updateDebris(dt); }
   fx.update(dt);
   renderer.render(scene, camera);
@@ -875,7 +1072,7 @@ async function boot() {
   bar.style.width = '30%';
   await platform.init();
   setLang(platform.lang());
-  applyTexts();
+  applyTexts(); fillIcons();
   document.title = t('docTitle');
   $('logo').innerHTML = t('title').replace(' ', '<br>') + '<small>3D</small>';
   $('controlsText').textContent = isTouch ? t('controlsTouch') : t('controlsPc');
@@ -886,13 +1083,13 @@ async function boot() {
   // import the item constructors for the endless generator
   ENDLESS_API = await import('./levels.js');
   // show the current level behind the title screen
-  endless = false; spawnLevel(Math.min(state.cur, LEVELS.length - 1));
+  endless = false; spawnLevel(0); attract = true;
   requestAnimationFrame(frame);
   bar.style.width = '100%';
   $('loader').classList.add('hidden'); $('start').classList.remove('hidden');
   const row = $('startRow');
-  const lb = document.createElement('button'); lb.className = 'btn'; lb.textContent = '☰ ' + t('levels'); lb.onclick = () => { audio.unlock(); openLevels(); }; row.appendChild(lb);
-  if (!platform.ownAudioControl) { const sb = document.createElement('button'); sb.className = 'btn grey'; sb.textContent = '⚙️'; sb.onclick = () => { audio.unlock(); renderSettings(false); }; row.appendChild(sb); }
+  const lb = document.createElement('button'); lb.className = 'btn'; lb.innerHTML = icon('menu') + ' ' + t('levels'); lb.onclick = () => { audio.unlock(); openLevels(); }; row.appendChild(lb);
+  if (!platform.ownAudioControl) { const sb = document.createElement('button'); sb.className = 'btn grey'; sb.innerHTML = icon('gear'); sb.onclick = () => { audio.unlock(); renderSettings(false); }; row.appendChild(sb); }
   requestAnimationFrame(() => platform.loadingDone());
   const go = () => { audio.unlock(); $('start').classList.add('hidden'); startLevel(Math.min(state.cur, LEVELS.length - 1)); };
   $('btnPlay').addEventListener('click', go);
@@ -901,5 +1098,5 @@ boot();
 
 if (platform.name === 'local' || (new URLSearchParams(location.search).has('debug') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) window.__game = {
   get state() { return state; }, get car() { return car; }, get run() { return run; }, startLevel, startEndless, fail, win, platform, get paused() { return paused; }, get panel() { return panelOpen; }, audio, get started() { return started; },
-  setHold(v) { hold = v; }, step(n) { for (let i = 0; i < n; i++) step(); }, adDue() { lastAd = 0; levelsSinceAd = 9; }, openPanel, closePanels, get level() { return levelIndex; },
+  setHold(v) { hold = v; }, get info() { return renderer.info.render; }, step(n) { for (let i = 0; i < n; i++) step(); }, adDue() { lastAd = 0; levelsSinceAd = 9; }, openPanel, closePanels, get level() { return levelIndex; },
 };

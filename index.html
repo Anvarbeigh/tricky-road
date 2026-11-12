@@ -37,7 +37,10 @@
   .logo small { display: block; font-size: .42em; letter-spacing: 6px; text-shadow: 0 4px 0 #99411b; }
   #bar { width: min(360px, 80vw); height: 22px; border-radius: 12px; background: rgba(0,0,0,.25); overflow: hidden; border: 3px solid #fff; }
   #bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffd84a, #ff9d2e); transition: width .2s; }
-  #start { background: radial-gradient(circle at 50% 35%, rgba(255,255,255,.12), rgba(10,20,50,.5)); }
+  #start { background: linear-gradient(rgba(10,20,50,.38), rgba(10,20,50,0) 34%, rgba(10,20,50,0) 62%, rgba(10,20,50,.45)); justify-content: space-between; padding: max(28px, env(safe-area-inset-top)) 20px max(34px, env(safe-area-inset-bottom)); }
+  #start .logo { font-size: clamp(52px, 11.5vw, 112px); }
+  #start .bottom { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #start .small { display: none; }
   #start p { margin: 0; max-width: 560px; font-size: 18px; font-weight: 600; text-shadow: 0 2px 0 rgba(0,0,0,.4); }
   #start .small { font-size: 14px; opacity: .9; font-weight: 500; }
   #btnPlay { font-size: 32px; padding: 16px 56px; border-radius: 22px; animation: pulse 1.2s ease-in-out infinite; }
@@ -47,17 +50,31 @@
   /* HUD */
   #hud { position: fixed; inset: 0; pointer-events: none; text-shadow: 0 2px 0 rgba(0,0,0,.35); z-index: 10; }
   #stats { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); display: flex; gap: 6px; align-items: center; }
-  #prog { position: absolute; top: max(24px, calc(env(safe-area-inset-top) + 14px)); left: 50%; transform: translateX(-50%); width: min(340px, 34vw); height: 12px; border-radius: 7px; background: rgba(20,28,55,.5); box-shadow: inset 0 0 0 2px rgba(255,255,255,.25); }
+  #prog { position: absolute; top: max(24px, calc(env(safe-area-inset-top) + 14px)); left: 50%; transform: translateX(-50%); width: min(340px, 34vw); height: 12px; border-radius: 7px; background: rgba(25,43,70,.85); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
   #prog i { position: absolute; top: -3px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; background: #ff6b3d; border: 2px solid #fff; }
   #prog b { position: absolute; right: -22px; top: -7px; font-size: 16px; font-weight: 400; text-shadow: none; }
-  .chip { background: rgba(20,28,55,.42); border: 0; border-radius: 14px; padding: 6px 13px; font-weight: 800; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+  .chip { background: rgba(25,43,70,.85); border: 2px solid rgba(255,255,255,.22); border-radius: 14px; padding: 6px 13px; font-weight: 800; font-size: 20px; display: flex; align-items: center; gap: 8px; }
   .chip .ic { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; background: rgba(255,255,255,.15); }
   #coinChip { color: var(--gold); }
   #coinChip .ic { background: radial-gradient(circle at 35% 30%, #fff3b0, #ffc531 55%, #d68a00); }
   #coinChip.bump { animation: bump .25s; }
+
+  #stamp { position: fixed; left: 50%; top: 34%; z-index: 12; pointer-events: none; display: none; translate: -50% -50%; }
+  body:has(#start:not(.hidden)) #stamp { top: 52%; z-index: 31; }
+  #stamp.on { display: block; animation: stampIn .9s cubic-bezier(.2,1.6,.4,1) forwards; }
+  #stamp b { display: block; padding: 26px 40px; font-size: clamp(30px, 6vw, 56px); font-weight: 900; color: #ffe066; letter-spacing: 1px;
+    text-shadow: 0 4px 0 #9a2b12, 0 0 2px #9a2b12; background: #ff5a3c; transform: rotate(-7deg);
+    clip-path: polygon(50% 0, 61% 18%, 82% 6%, 79% 29%, 100% 32%, 85% 50%, 100% 68%, 79% 71%, 82% 94%, 61% 82%, 50% 100%, 39% 82%, 18% 94%, 21% 71%, 0 68%, 15% 50%, 0 32%, 21% 29%, 18% 6%, 39% 18%); }
+  @keyframes stampIn { 0% { transform: scale(2.4); opacity: 0 } 25% { transform: scale(.92); opacity: 1 } 35% { transform: scale(1) } 80% { opacity: 1 } 100% { opacity: 0; transform: scale(1.04) } }
+  .flycoin { position: fixed; z-index: 11; width: 22px; height: 22px; margin: -11px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff3a0, #ffc531 55%, #d98f00); box-shadow: 0 0 0 2px #9a6200 inset; pointer-events: none;
+    transition: transform .5s cubic-bezier(.5,-0.3,.7,1), opacity .5s; }
+  #failChip.hit { animation: hit .45s; } @keyframes hit { 30% { transform: scale(1.25); background: #e03131 } }
+  #winStars span { display: inline-block; animation: starIn .45s cubic-bezier(.2,1.8,.4,1) both; }
+  #winStars span:nth-child(2) { animation-delay: .14s } #winStars span:nth-child(3) { animation-delay: .28s }
+  @keyframes starIn { from { transform: scale(0) rotate(-40deg); opacity: 0 } }
   @keyframes bump { 50% { transform: scale(1.12) } }
   #side { position: absolute; right: max(10px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); display: flex; gap: 8px; }
-  .sbtn { width: 44px; height: 44px; border-radius: 14px; padding: 0; font-size: 19px; --c: rgba(20,28,55,.45); --d: rgba(0,0,0,.2); }
+  .sbtn { width: 44px; height: 44px; border-radius: 14px; padding: 0; font-size: 19px; --c: rgba(25,43,70,.85); --d: rgba(0,0,0,.2); }
   #tut { position: absolute; left: 50%; transform: translateX(-50%); top: max(62px, calc(env(safe-area-inset-top) + 52px)); width: max-content; max-width: calc(100vw - 32px);
          background: linear-gradient(#ffe066, #ffbf2e); color: #4a2a00; text-shadow: none; font-weight: 900; font-size: 18px; padding: 10px 20px; border-radius: 18px;
          box-shadow: 0 5px 0 #c98a00, 0 10px 20px rgba(0,0,0,.25); text-align: center; animation: tutIn .4s; }
@@ -106,7 +123,7 @@
   .skin { width: 46px; height: 28px; border-radius: 8px; border: 3px solid #fff3; }
 
   @media (max-width: 640px), (max-height: 480px) {
-    .chip { font-size: 16px; padding: 4px 10px; } .chip .ic { width: 24px; height: 24px; font-size: 14px; }
+    .chip { font-size: 18px; padding: 4px 10px; } .chip .ic { width: 24px; height: 24px; font-size: 14px; }
     .sbtn { width: 44px; height: 44px; font-size: 19px; }
     #tut { font-size: 15px; padding: 8px 14px; top: 30%; }
     #prog { top: max(62px, calc(env(safe-area-inset-top) + 52px)); width: 72vw; }
@@ -118,6 +135,38 @@
     .logo { font-size: clamp(30px, 13vh, 60px); } #start { gap: 10px; } #btnPlay { font-size: 26px; padding: 10px 44px; } #start .small { display: none; }
     #helpers { bottom: 10px; }
   }
+  /* one icon system */
+  .ico-svg { width: 1.05em; height: 1.05em; vertical-align: -0.16em; flex: none; }
+  .sbtn .ico-svg { width: 22px; height: 22px; vertical-align: middle; }
+  .chip .ic .ico-svg { width: 18px; height: 18px; }
+  #failChip .ic { background: none; color: #f1f3fa; }
+  #prog b .ico-svg { width: 20px; height: 20px; color: #fff; }
+  .row .ico .ico-svg { width: 28px; height: 28px; color: #ffe8b0; }
+  .box h2 .btn .ico-svg { width: 20px; height: 20px; vertical-align: middle; }
+  .stars .ico-svg { width: 1em; height: 1em; color: var(--gold); filter: drop-shadow(0 3px 0 #b97a00); }
+  .stars .off .ico-svg { color: #59628a; filter: drop-shadow(0 3px 0 #2a3150); }
+  .stars .off { opacity: 1; }
+  .gifticon .ico-svg { color: #ff8fb1; width: 64px; height: 64px; }
+  /* win card: ribbon, big stars, coin pill */
+  .box.wincard { position: relative; padding-top: 44px; margin-top: 24px; overflow: visible; width: min(420px, 100%); }
+  .ribbon { position: absolute; left: 50%; top: -22px; translate: -50% 0; white-space: nowrap; padding: 10px 34px; font-size: 26px; font-weight: 900; color: #5a3300;
+    background: linear-gradient(#ffd75a, #ffb32e); border-radius: 12px; box-shadow: 0 5px 0 #c47a10, 0 10px 18px rgba(0,0,0,.3); text-shadow: 0 2px 0 rgba(255,255,255,.4); }
+  .ribbon::before, .ribbon::after { content: ''; position: absolute; top: 12px; width: 26px; height: 100%; background: #e8951f; z-index: -1; }
+  .ribbon::before { left: -18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 35% 50%); }
+  .ribbon::after { right: -18px; clip-path: polygon(0 0, 100% 0, 65% 50%, 100% 100%, 0 100%); }
+  .wincard .stars { font-size: 64px; letter-spacing: 4px; }
+  .wincard .stars span:nth-child(2) { font-size: 1.18em; vertical-align: 0.08em; }
+  .coinpill { display: inline-flex; align-items: center; gap: 8px; margin: 2px auto 14px; padding: 6px 16px; border-radius: 999px; background: rgba(0,0,0,.25); font-size: 20px; font-weight: 900; color: var(--gold); }
+  .coinic { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff3a0, #ffc531 55%, #d98f00); box-shadow: 0 0 0 2px #9a6200 inset; }
+  .wincard .rowbtns .btn { font-size: 20px; padding: 14px 20px; min-width: 150px; }
+  /* level tiles: cream cards with stars */
+  .cell { background: linear-gradient(#fff6e0, #f2dfb4); color: #4a3418; box-shadow: 0 4px 0 #c9a96a; border: 0; }
+  .cell .st { display: flex; justify-content: center; gap: 1px; min-height: 14px; }
+  .cell .st i .ico-svg { width: 13px; height: 13px; color: var(--gold); filter: drop-shadow(0 1px 0 #a06c00); }
+  .cell .st i.off .ico-svg { color: #cdb88a; filter: none; }
+  .cell.locked { background: #3a4570; color: #8e98c4; box-shadow: 0 4px 0 #262d4c; opacity: 1; filter: none; }
+  .cell.locked .ico-svg { width: 22px; height: 22px; }
+  .cell.cur { outline: 3px solid #3fcf5e; outline-offset: 2px; }
 </style>
 
 <script>window.PLATFORM = "web";</script>
@@ -126,36 +175,39 @@
 <canvas id="game"></canvas>
 <div id="gas"></div>
 <div id="flash"></div>
+<div id="stamp"><b></b></div>
 <div id="fade"></div>
 
 <div id="hud" class="hidden">
   <div id="stats">
     <div class="chip" id="lvlChip"><span id="lvlText"></span></div>
     <div class="chip" id="coinChip"><span class="ic"></span><span id="coins">0</span></div>
-    <div class="chip" id="failChip"><span class="ic">☠</span><span id="failText"></span></div>
+    <div class="chip" id="failChip"><span class="ic" data-ic="skull"></span><span id="failText"></span></div>
   </div>
-  <div id="prog"><i id="progCar"></i><b>🏁</b></div>
+  <div id="prog"><i id="progCar"></i><b data-ic="flag"></b></div>
   <div id="tut" class="hidden"></div>
   <div id="toasts"></div>
   <div id="helpers"></div>
   <div id="side">
-    <button class="btn sbtn" id="btnPause">⏸</button>
-    <button class="btn sbtn" id="btnLevels">☰</button>
+    <button class="btn sbtn" id="btnPause" data-ic="pause"></button>
+    <button class="btn sbtn" id="btnLevels" data-ic="menu"></button>
   </div>
 </div>
 
-<div class="panel" id="winPanel"><div class="box center"><h2 style="justify-content:center" id="winTitle"></h2><div class="stars" id="winStars"></div><div class="note" id="winCoins"></div><div class="rowbtns" id="winBtns"></div></div></div>
-<div class="panel" id="levelsPanel"><div class="box"><h2><span>☰ <span data-t="levels"></span></span><button class="btn red" data-close>✕</button></h2><div class="tabs" id="worldTabs"></div><div class="grid" id="levelGrid"></div><div id="extraRows" style="margin-top:12px"></div></div></div>
-<div class="panel" id="garagePanel"><div class="box"><h2><span>🚗 <span data-t="garage"></span></span><button class="btn red" data-close>✕</button></h2><div id="garageList"></div></div></div>
-<div class="panel" id="giftPanel"><div class="box center"><h2 style="justify-content:center">🎁 <span data-t="giftTitle"></span></h2><div id="giftBody"></div></div></div>
-<div class="panel" id="settingsPanel"><div class="box"><h2><span>⚙️ <span id="settingsTitle"></span></span><button class="btn red" data-close>✕</button></h2><div id="settingsBody"></div></div></div>
+<div class="panel" id="winPanel"><div class="box center wincard"><div class="ribbon"><span id="winTitle"></span></div><div class="stars" id="winStars"></div><div class="coinpill"><span class="coinic"></span><span id="winCoins"></span></div><div class="rowbtns" id="winBtns"></div></div></div>
+<div class="panel" id="levelsPanel"><div class="box"><h2><span><i data-ic="menu"></i> <span data-t="levels"></span></span><button class="btn red" data-close data-ic="close"></button></h2><div class="tabs" id="worldTabs"></div><div class="grid" id="levelGrid"></div><div id="extraRows" style="margin-top:12px"></div></div></div>
+<div class="panel" id="garagePanel"><div class="box"><h2><span><i data-ic="car"></i> <span data-t="garage"></span></span><button class="btn red" data-close data-ic="close"></button></h2><div id="garageList"></div></div></div>
+<div class="panel" id="giftPanel"><div class="box center"><h2 style="justify-content:center"><i data-ic="gift"></i> <span data-t="giftTitle"></span></h2><div id="giftBody"></div></div></div>
+<div class="panel" id="settingsPanel"><div class="box"><h2><span><i data-ic="gear"></i> <span id="settingsTitle"></span></span><button class="btn red" data-close data-ic="close"></button></h2><div id="settingsBody"></div></div></div>
 <div class="panel" id="endPanel"><div class="box center"><h2 style="justify-content:center" id="endTitle"></h2><div class="note" id="endBody"></div><div class="rowbtns" id="endBtns"></div></div></div>
 
 <div id="start" class="hidden">
   <div class="logo" id="logo"></div>
+  <div class="bottom">
   <p data-t="tagline"></p>
-  <button class="btn green" id="btnPlay">▶ <span data-t="play"></span></button>
+  <button class="btn green" id="btnPlay"><i data-ic="play"></i> <span data-t="play"></span></button>
   <div id="startRow"></div>
+  </div>
   <p class="small" id="controlsText"></p>
 </div>
 <div id="loader">
