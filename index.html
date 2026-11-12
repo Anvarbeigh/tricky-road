@@ -172,6 +172,13 @@
   #tipCard.on { display: flex; animation: tipIn .35s cubic-bezier(.2,1.6,.4,1) both; }
   #tipCard .ico-svg { width: 26px; height: 26px; color: #3fcf5e; flex: none; }
   @keyframes tipIn { from { transform: translateY(16px) scale(.8); opacity: 0 } }
+  /* the gas pedal lights up on the very frame of the press (no transition on press, a short one on release) */
+  #pedal { position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, calc(env(safe-area-inset-bottom) + 12px)); width: 92px; height: 92px; border-radius: 26px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; pointer-events: none;
+    background: rgba(25,43,70,.55); border: 3px solid rgba(255,255,255,.35); color: rgba(255,255,255,.75); font-weight: 900; font-size: 14px; transition: background .18s, transform .18s, border-color .18s; }
+  #pedal .ico-svg { width: 38px; height: 38px; }
+  #pedal.on { background: #3fcf5e; border-color: #fff; color: #fff; transform: scale(.9); transition: none; box-shadow: 0 0 0 6px rgba(63,207,94,.35); }
+  body:not(.touch) #pedal { width: 84px; height: 84px; }
 </style>
 
 <script>window.PLATFORM = "web";</script>
@@ -194,6 +201,7 @@
   <div id="tut" class="hidden"></div>
   <div id="toasts"></div>
   <div id="helpers"></div>
+  <div id="pedal"><i data-ic="pedal"></i><b data-t="gas"></b></div>
   <div id="side">
     <button class="btn sbtn" id="btnPause" data-ic="pause"></button>
     <button class="btn sbtn" id="btnLevels" data-ic="menu"></button>

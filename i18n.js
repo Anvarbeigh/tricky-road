@@ -23,7 +23,7 @@ const STR = {
     paused: 'Paused', crashed: 'CRASHED', fell: 'FELL!', wall: 'OUCH', hazard: 'OUCH', roof: 'FLIPPED', ghost: 'Watch the ghost…',
     skins: ['Classic', 'Mint', 'Sunset', 'Night', 'Candy', 'Gold'],
     // signs
-    s_safebridge: 'SAFE BRIDGE →', s_hold: 'HOLD TO GO →', nice: 'NICE!', letGo: 'LET GO ▶', s_slow: 'SLOW DOWN!', s_bridge: 'BRAKE ON THE BRIDGE', s_almost: 'ALMOST THERE', s_fast: 'FULL SPEED!',
+    s_safebridge: 'SAFE BRIDGE →', s_hold: 'HOLD TO GO →', nice: 'NICE!', gas: 'GAS', letGo: 'LET GO ▶', s_slow: 'SLOW DOWN!', s_bridge: 'BRAKE ON THE BRIDGE', s_almost: 'ALMOST THERE', s_fast: 'FULL SPEED!',
     s_jump: 'JUMP!', s_timing: 'WAIT FOR IT…', s_rock: 'NOTHING ABOVE YOU', s_stop: 'STOP TO OPEN', s_trust: 'TRUST ME', s_nottrap: 'NOT A TRAP',
     s_safe: 'SAFE', s_ice: 'ICE', s_wind: 'WINDY', s_moon: 'LOW GRAVITY', s_back: 'GO BACK', s_flag: 'FLAG →', s_free: 'FREE COINS', s_hurry: 'HURRY!',
   },
@@ -47,7 +47,7 @@ const STR = {
     gift: 'Подарок', giftTitle: 'Ежедневный подарок', giftText: 'Заходи каждый день: {a}, потом {b}, потом {c} монет.', giftTaken: 'Сегодня уже забран', giftDay: 'День {n}',
     paused: 'Пауза', crashed: 'АВАРИЯ', fell: 'УПАЛ!', wall: 'ОЙ', hazard: 'ОЙ', roof: 'ПЕРЕВЕРНУЛСЯ', ghost: 'Смотри на призрака…',
     skins: ['Классика', 'Мята', 'Закат', 'Ночь', 'Конфета', 'Золото'],
-    s_safebridge: 'НАДЁЖНЫЙ МОСТ →', s_hold: 'ДЕРЖИ — ЕДЕМ →', nice: 'КЛАСС!', letGo: 'ОТПУСТИ ▶', s_slow: 'ТОРМОЗИ!', s_bridge: 'ТОРМОЗИ НА МОСТУ', s_almost: 'ПОЧТИ ПРИЕХАЛ', s_fast: 'ПОЛНЫЙ ГАЗ!',
+    s_safebridge: 'НАДЁЖНЫЙ МОСТ →', s_hold: 'ДЕРЖИ — ЕДЕМ →', nice: 'КЛАСС!', gas: 'ГАЗ', letGo: 'ОТПУСТИ ▶', s_slow: 'ТОРМОЗИ!', s_bridge: 'ТОРМОЗИ НА МОСТУ', s_almost: 'ПОЧТИ ПРИЕХАЛ', s_fast: 'ПОЛНЫЙ ГАЗ!',
     s_jump: 'ПРЫГАЙ!', s_timing: 'ПОДОЖДИ…', s_rock: 'СВЕРХУ НИЧЕГО НЕТ', s_stop: 'ОСТАНОВИСЬ', s_trust: 'ВЕРЬ МНЕ', s_nottrap: 'ЭТО НЕ ЛОВУШКА',
     s_safe: 'БЕЗОПАСНО', s_ice: 'ЛЁД', s_wind: 'ВЕТЕР', s_moon: 'НИЗКАЯ ГРАВИТАЦИЯ', s_back: 'НАЗАД', s_flag: 'ФЛАГ →', s_free: 'МОНЕТЫ ДАРОМ', s_hurry: 'БЫСТРЕЕ!',
   },

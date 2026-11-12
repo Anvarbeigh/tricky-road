@@ -175,22 +175,25 @@ function stripes() {
 const stripePlane = (w, h, x, y, z) => { const t = stripes().clone(); t.repeat.set(w / 2, 1); t.needsUpdate = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t })); m.position.set(x, y, z); return m; };
 
 function textTexture(text, { w = 512, h = 160, bg = '#f7e9c8', fg = '#3a2a1a', size = 56 } = {}) {
+  const S = 2; w *= S; h *= S; size *= S;   // 2x canvas: crisp on phones (DPR 2-3) and when the sign is close
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
   g.fillStyle = bg; g.fillRect(0, 0, w, h);
-  g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 10; g.strokeRect(5, 5, w - 10, h - 10);
+  g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 10 * S; g.strokeRect(5 * S, 5 * S, w - 10 * S, h - 10 * S);
   g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
   let fs = size; g.font = `900 ${fs}px Rubik, sans-serif`;
-  while (g.measureText(text).width > w - 50 && fs > 18) { fs -= 3; g.font = `900 ${fs}px Rubik, sans-serif`; }
-  g.fillText(text, w / 2, h / 2 + 2);
-  const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 4;
+  while (g.measureText(text).width > w - 50 * S && fs > 18 * S) { fs -= 3 * S; g.font = `900 ${fs}px Rubik, sans-serif`; }
+  g.lineJoin = 'round'; g.lineWidth = fs * 0.12; g.strokeStyle = 'rgba(255,255,255,.55)'; g.strokeText(text, w / 2, h / 2 + 2 * S);   // light halo keeps the letters apart
+  g.fillText(text, w / 2, h / 2 + 2 * S);
+  const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  tx.generateMipmaps = true; tx.minFilter = THREE.LinearMipmapLinearFilter; tx.magFilter = THREE.LinearFilter;
   return tx;
 }
 function signMesh(x, y, text) {
   const g = new THREE.Group();
   g.add(box(0.16, 2.8, 0.16, 0x6a4420, -1.2, 1.4, 0)); g.add(box(0.16, 2.8, 0.16, 0x6a4420, 1.2, 1.4, 0));
-  const board = new THREE.Mesh(new THREE.PlaneGeometry(4.0, 1.3), new THREE.MeshBasicMaterial({ map: textTexture(text, { bg: '#ffe066', fg: '#2a1a0a', size: 66 }) }));
-  board.position.set(0, 2.6, 0.08); g.add(board);
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(4.0, 1.3), new THREE.MeshBasicMaterial({ map: textTexture(text, { bg: '#ffe066', fg: '#2a1a0a', size: 66 }), fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+  board.position.set(0, 2.6, 0.13); board.renderOrder = 2; g.add(board);   // 8 cm in front of the frame + polygon offset: no z-fighting on phone depth buffers
   g.add(box(4.2, 1.5, 0.1, 0x3a2a1a, 0, 2.6, 0));
   g.position.set(x, y, -1.6);
   return g;
@@ -499,7 +502,7 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
   run = buildLevel(level);
   const st = endless || !fails ? level.start : (fails >= 4 && level.retry2) || level.retry || level.start;   // retries start just before the trap
   car = makeCar(st[0], st[1], carOf(level));
-  finished = false; failing = false; levelTime = 0; hold = false;
+  finished = false; failing = false; levelTime = 0; hold = false; $('pedal').classList.remove('on');
   const top = w.ground, side = w.dirt;
   for (const it of level.items) {
     switch (it.k) {
@@ -686,8 +689,8 @@ function fail(reason) {
   audio.engine(0, 0, false);
   const c = carCenter(car);
   fx.burst({ x: c.x, y: c.y + 0.5, z: 0 }, 0xff6b3d, 26, 6); fx.burst({ x: c.x, y: c.y + 0.5, z: 0 }, 0x333333, 12, 4);
-  fx.shake(reason === 'fell' ? 0.4 : 0.8);
-  if (reason !== 'fell') { spawnDebris(c.x, c.y, [SKINS[state.skin].body, 0x23242e, 0xe6e8f0, 0x7fe3ff], 12); camW *= 0.84; }
+  if (reason !== 'fell') fx.shake(0.4);
+  if (reason !== 'fell') { spawnDebris(c.x, c.y, [SKINS[state.skin].body, 0x23242e, 0xe6e8f0, 0x7fe3ff], 12); }
   $('flash').style.opacity = 0.45; setTimeout(() => { $('flash').style.opacity = 0; }, 120);
   stamp(level.hint ? t('gotcha') : t(reason === 'fell' ? 'fell' : reason)); $('failChip').classList.remove('hit'); void $('failChip').offsetWidth; $('failChip').classList.add('hit');
   if (reason !== 'fell') hitStop = 0.09;
@@ -974,15 +977,14 @@ platform.onResume = () => resume();
 platform.onAudio = (on) => { if (on) audio.resume(); else audio.suspend(); };
 if (!platform.ownPauseEvents) document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else resume(); });
 
-const press = (e) => { if (e && e.target && e.target.closest && e.target.closest('button, .cell, .panel')) return; audio.unlock(); if (!hold) gasKick(); hold = true; if (!failing && fails === 0) setTimeout(() => $('tut').classList.add('hidden'), 1400); };
-const release = () => { hold = false; };
+const press = (e) => { if (e && e.target && e.target.closest && e.target.closest('button, .cell, .panel')) return; audio.unlock(); if (!hold) gasKick(); hold = true; $('pedal').classList.add('on'); if (!failing && fails === 0) setTimeout(() => $('tut').classList.add('hidden'), 1400); };
+const release = () => { hold = false; $('pedal').classList.remove('on'); };
 // the press answers on the very next frame: nose lifts, wheels spin up, exhaust/dust puff, a small camera punch
-let camPunch = 0;
 function gasKick() {
   if (!started || paused || failing || finished || !car || !carMesh) return;
-  pitchV += 2.6; wheelSpin += 1.2; camPunch = 1;
+  pitchV += 2.6; wheelSpin += 1.2;   // the car answers the press; the camera never does (no punch, no shake)
   const rx = car.p[0].x, ry = car.p[0].y - WHEEL_R;
-  for (let i = 0; i < 4; i++) fx.dust({ x: rx - 0.2 - i * 0.15, y: ry + 0.1, z: 0.6 }, WORLDS[level.w].id === 'moon' ? 0xc0c4d4 : 0xe8dcc0);
+  for (let i = 0; i < 8; i++) fx.dust({ x: rx - 0.2 - i * 0.12, y: ry + 0.1 + (i % 3) * 0.08, z: 0.6 }, WORLDS[level.w].id === 'moon' ? 0xc0c4d4 : 0xe8dcc0);
   fx.dust({ x: rx - 1.4, y: ry + 0.55, z: -0.3 }, 0xb8bcc8);   // exhaust puff
 }
 $('gas').addEventListener('pointerdown', (e) => { e.preventDefault(); press(e); });
@@ -1038,7 +1040,7 @@ function step() {
     if (ev.name === 'coin') { audio.play('coin', { vol: 0.7 }); fx.sparkle({ x: ev.x, y: ev.y + 1, z: 0 }, 0xffe27a, 14); fx.burst({ x: ev.x, y: ev.y + 1, z: 0.3 }, 0xffd23a, 8, 3); state.coins += 1; flyCoin(ev.x, ev.y + 1); }
     else if (ev.name === 'win') win();
     else if (ev.name === 'crack') audio.play('crack');
-    else if (ev.name === 'fall' || ev.name === 'thud') { audio.play('thud'); fx.shake(0.3); }
+    else if (ev.name === 'fall' || ev.name === 'thud') { audio.play('thud'); }
     else if (ev.name === 'click') audio.play('click');
     else if (ev.name === 'flagrun') { audio.play('jump', { vol: 0.8 }); stamp(t('gotcha')); }
     else if (ev.name === 'boost') audio.play('whoosh');
@@ -1086,10 +1088,9 @@ function updateCamera(dt) {
   camX += (targetX - camX) * Math.min(1, dt * 6);
   camY += (targetY - camY) * Math.min(1, dt * 4);
   const sh = fx.shakeOffset();
-  camPunch = Math.max(0, camPunch - dt * 4);
-  const fovNow = 50 + 4.2 * Math.sin(Math.min(1, camPunch) * Math.PI * 0.5) * camPunch;   // launch punch, settles in ~0.25 s
-  if (Math.abs(camera.fov - fovNow) > 0.01) { camera.fov = fovNow; camera.updateProjectionMatrix(); }
-  camera.position.set(camX - camPunch * 0.35 + (Math.random() - 0.5) * sh, camY + dist * 0.14 + (Math.random() - 0.5) * sh, dist);
+  // shake: only a tiny, smooth, non-stacking nudge on a crash (no random jitter; the player finds shaky cameras nauseating)
+  const shk = Math.min(0.12, sh * 0.25) * Math.sin(simT * 28);
+  camera.position.set(camX + shk, camY + dist * 0.14 + shk * 0.5, dist);
   camera.lookAt(camX, camY, 0);
   if (SHADOWS) { sun.position.set(camX - 20, camY + 40, 30); sun.target.position.set(camX, camY, 0); }
   bg.position.x = camX * 0.72; bg.position.y = camY * 0.5 + (aspect > 1 ? 0 : H * 0.24);
@@ -1120,7 +1121,6 @@ function attractStep(dt) {
     const touched = stepCar(car, true, run.colliders); car.hold = true; car.gravityScale = run.gravityScale;
     updateLevel(run, car, DT, touched);
     wheelSpin += Math.abs(carSpeed(car)) * DT / WHEEL_R;
-    for (const ev of run.events) if (ev.name === 'crack' || ev.name === 'fall' || ev.name === 'thud') fx.shake(0.25);
     run.events.length = 0;
     if (attractT > 0) { attractT -= DT; if (attractT <= 0) { spawnLevel(0); return; } }
     else if (car.crashed || carCenter(car).y < groundYAt(carCenter(car).x) - 2.5 && carCenter(car).y < lastGroundY - 2.5) { attractT = 1.1; stamp(t('gotcha')); }
@@ -1171,6 +1171,8 @@ async function boot() {
   // import the item constructors for the endless generator
   ENDLESS_API = await import('./levels.js');
   // show the current level behind the title screen
+  // sign textures are drawn on a canvas: wait (max 1.5 s) for the game font so the first signs aren't drawn with a fallback
+  try { await Promise.race([document.fonts.load('900 66px Rubik'), new Promise((r) => setTimeout(r, 1500))]); } catch (e) { /* no FontFaceSet: draw anyway */ }
   endless = false; spawnLevel(0); attract = true;
   requestAnimationFrame(frame);
   bar.style.width = '100%';

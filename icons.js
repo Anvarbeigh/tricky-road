@@ -17,6 +17,7 @@ export const ICONS = {
   trophy: S('<path d="M7 4h10v5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5M12 14v4M8 20.5h8"/>'),
   video: S('<rect x="3" y="6" width="13" height="12" rx="2" fill="currentColor"/><path d="M16 10.5l5-3v9l-5-3z" fill="currentColor"/>'),
   play: S('<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>'),
+  pedal: S('<rect x="6" y="3" width="12" height="18" rx="3" fill="currentColor" stroke="none"/><path d="M9 8h6M9 12h6M9 16h6" stroke="#20263a" stroke-width="2"/>'),
   next: S('<path d="M5 12h13M13 6l6 6-6 6"/>'),
 };
 export const icon = (n) => ICONS[n] || '';
