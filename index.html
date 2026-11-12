@@ -167,6 +167,11 @@
   .cell.locked { background: #3a4570; color: #8e98c4; box-shadow: 0 4px 0 #262d4c; opacity: 1; filter: none; }
   .cell.locked .ico-svg { width: 22px; height: 22px; }
   .cell.cur { outline: 3px solid #3fcf5e; outline-offset: 2px; }
+  #tipCard { position: fixed; left: 50%; top: 44%; translate: -50% 0; z-index: 12; pointer-events: none; display: none; align-items: center; gap: 10px; max-width: calc(100vw - 32px);
+    padding: 12px 20px; border-radius: 16px; background: rgba(25,43,70,.92); border: 3px solid #3fcf5e; color: #fff; font-weight: 900; font-size: clamp(17px, 3.2vw, 24px); text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,.3); }
+  #tipCard.on { display: flex; animation: tipIn .35s cubic-bezier(.2,1.6,.4,1) both; }
+  #tipCard .ico-svg { width: 26px; height: 26px; color: #3fcf5e; flex: none; }
+  @keyframes tipIn { from { transform: translateY(16px) scale(.8); opacity: 0 } }
 </style>
 
 <script>window.PLATFORM = "web";</script>
@@ -176,6 +181,7 @@
 <div id="gas"></div>
 <div id="flash"></div>
 <div id="stamp"><b></b></div>
+<div id="tipCard"><i data-ic="flag"></i><span></span></div>
 <div id="fade"></div>
 
 <div id="hud" class="hidden">

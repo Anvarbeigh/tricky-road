@@ -65,7 +65,8 @@ export function buildLevel(level) {
             const v = Math.abs(carSpeed(car));
             let hit;
             if (it.when === 'slow' || it.when === 'fast') { if (e.judged) return; e.judged = true; hit = it.when === 'slow' ? v < (it.v ?? 7) : v > (it.v ?? 9); }
-            else hit = it.when === 'touch' || (it.when === 'brake' && !car.hold);
+            else if (it.when === 'brake') { e.relT = car.hold ? 0 : (e.relT || 0) + dt; hit = e.relT > (it.need ?? 0); }   // need: seconds of steady braking (a quick blip is forgiven)
+            else hit = it.when === 'touch';
             if (hit) { e.state = 'armed'; e.t = 0; ev('crack', { x: it.x0 }); }
           } else if (e.state === 'armed') {
             e.t += dt;
@@ -255,30 +256,30 @@ export const LEVELS = [
   { w: 0, name: 'l_hold', start: [2, 0], finish: 52, killY: -8, solve: [[0, 25]],
     items: [flat(-6, 22), G([22, 0], [26, 0.7], [30, 0]), flat(30, 58), SIGN(7, 0, 's_hold'), COIN(12, 0.2), COIN(26, 1.2), COIN(40, 0.2), TREE(-3, 0), TREE(36, 0, 1.2), TREE(56, 0)] },
 
-  // the first lie; retries start just before the trap (from the 3rd try with a run-up so short that full gas stays under
+  // the first lie; retries start just before the trap (from the 4th try with a run-up so short that full gas stays under
   // the limit: the game helps a stuck first-timer through), and the bridge forgives up to 13 m/s (was 11)
   { w: 0, name: 'l_safe', hint: 'h_brake', start: [2, 0], retry: [14, 0], retry2: [27, 0], finish: 70, killY: -8, solve: [[0, 1.5], [3, 25]],
     items: [flat(-6, 30), BRIDGE(30, 42, 0, { when: 'fast', v: 13, delay: 0 }), flat(42, 76), SIGN(19, 0, 's_safebridge', { lie: true }), ...COINS(34, 0.3), TREE(-3, 0), TREE(52, 0, 1.3), TREE(74, 0)] },
 
-  { w: 0, name: 'l_gap', start: [2, 0], finish: 70, killY: -8, solve: [[0, 25]],
+  { w: 0, name: 'l_gap', hint: 'h_gap', start: [2, 0], retry: [14, 0], finish: 70, killY: -8, solve: [[0, 25]],
     items: [G([-6, 0], [26, 0], [30, 0.6]), flat(35, 75), SIGN(18, 0, 's_slow', { lie: true }), ...COINS(31, 1.6), TREE(-3, 0), TREE(50, 0)] },
 
-  { w: 0, name: 'l_bridge', start: [2, 0], finish: 72, killY: -8, solve: [[0, 25]],
-    items: [flat(-6, 28), BRIDGE(28, 40, 0, { when: 'brake', delay: 0.1 }), flat(40, 78), SIGN(22, 0, 's_bridge'), ...COINS(31, 1.2), TREE(-3, 0), TREE(60, 0, 1.2)] },
+  { w: 0, name: 'l_bridge', hint: 'h_nobrake', start: [2, 0], retry: [16, 0], finish: 72, killY: -8, solve: [[0, 25]],
+    items: [flat(-6, 28), BRIDGE(28, 40, 0, { when: 'brake', delay: 0.1, need: 0.5 }), flat(40, 78), SIGN(22, 0, 's_bridge'), ...COINS(31, 1.2), TREE(-3, 0), TREE(60, 0, 1.2)] },
 
-  { w: 0, name: 'l_fakeflag', start: [2, 0], finish: 40, killY: -8, solve: [[0, 25]],
+  { w: 0, name: 'l_fakeflag', hint: 'h_flag', start: [2, 0], finish: 40, killY: -8, solve: [[0, 25]],
     items: [flat(-6, 75), FAKEFLAG(40, 0, [22]), SIGN(30, 0, 's_almost'), ...COINS(50, 1.2), TREE(-3, 0), TREE(70, 0)] },
 
-  { w: 0, name: 'l_trapdoor', start: [2, 0], finish: 70, killY: -8, solve: [[0, 1.5], [3, 25]],
+  { w: 0, name: 'l_trapdoor', hint: 'h_trapdoor', start: [2, 0], retry: [16, 0], retry2: [26, 0], finish: 70, killY: -8, solve: [[0, 1.5], [3, 25]],
     items: [flat(-6, 30), TRAPDOOR(30, 36, 0, { when: 'fast', v: 9, lead: 1 }), flat(36, 76), SIGN(22, 0, 's_fast', { lie: true }), ...COINS(31, 1.1), TREE(-3, 0), TREE(55, 0)] },
 
-  { w: 0, name: 'l_spikes', start: [2, 0], finish: 80, killY: -8, solve: [[0, 25]],
+  { w: 0, name: 'l_spikes', hint: 'h_spikes', start: [2, 0], retry: [12, 0], finish: 80, killY: -8, solve: [[0, 25]],
     items: [G([-6, 0], [24, 0], [28, 0.7]), SPIKES(29, 33, -0.2), flat(34, 86), G([34, 0], [40, 0.8], [52, 0.8], [56, 0]), ...COINS(42, 2), SIGN(16, 0, 's_jump'), TREE(-3, 0), TREE(70, 0)] },
 
-  { w: 0, name: 'l_crusher', start: [2, 0], finish: 70, killY: -8, solve: [[0, 0.5], [1, 25]],
+  { w: 0, name: 'l_crusher', hint: 'h_crusher', start: [2, 0], retry: [20, 0], finish: 70, killY: -8, solve: [[0, 0.5], [1, 25]],
     items: [flat(-6, 76), CRUSHER(34, 4, 4.5, 0.9, 2.0, { phase: 0.3 }), SIGN(24, 0, 's_timing'), ...COINS(40, 1.2), TREE(-3, 0), TREE(60, 0)] },
 
-  { w: 0, name: 'l_rock', start: [2, 0], finish: 80, killY: -8, solve: [[0, 25]],
+  { w: 0, name: 'l_rock', hint: 'h_rock', start: [2, 0], retry: [22, 0], finish: 80, killY: -8, solve: [[0, 25]],
     items: [flat(-6, 86), FALLROCK(44, 9, 1.6, 36, 0), SIGN(26, 0, 's_rock', { lie: true }), ...COINS(55, 1.2), TREE(-3, 0), TREE(70, 0, 1.3)] },
 
   { w: 0, name: 'l_stop', start: [2, 0], finish: 70, killY: -8, solve: [[0, 0.5], [1, 25]],

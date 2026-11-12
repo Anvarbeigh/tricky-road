@@ -455,7 +455,7 @@ function vehicleMesh(kind, skin) {
 let run = null, car = null, level = null, levelIndex = 0, carMesh = null, ghost = null, ghostRun = null, ghostCar = null, ghostT = 0;
 let dyn = [];          // [{e, mesh, kind}] meshes that follow entity state
 let coinMeshes = [], flag = null, started = false, paused = 0, hold = false, fails = 0, levelTime = 0, finished = false, failing = false;
-let frameDt = 1 / 60, coastT = 0, hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = 0, levelsSinceAd = 0, endless = false, endlessDist = 0;
+let frameDt = 1 / 60, coastT = 0, hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = Date.now(), levelsSinceAd = 0, endless = false, endlessDist = 0;
 
 function clearGroup(g) {
   while (g.children.length) { const c = g.children.pop(); c.traverse((o) => { if (o.geometry && !Object.values(GEO).includes(o.geometry)) o.geometry.dispose(); }); }
@@ -497,7 +497,7 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
   const w = WORLDS[level.w];
   clearGroup(world); dyn = []; coinMeshes = []; ghost = null; ghostRun = null;
   run = buildLevel(level);
-  const st = endless || !fails ? level.start : (fails >= 2 && level.retry2) || level.retry || level.start;   // retries start just before the trap
+  const st = endless || !fails ? level.start : (fails >= 3 && level.retry2) || level.retry || level.start;   // retries start just before the trap
   car = makeCar(st[0], st[1], carOf(level));
   finished = false; failing = false; levelTime = 0; hold = false;
   const top = w.ground, side = w.dirt;
@@ -581,6 +581,11 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
   coastT = 0; landed = true; lastVy = 0; lastGroundY = level.start[1]; pitchV = 0; pitch = 0; bounce = 0; bounceV = 0; prevSpeed = 0; camW = 0;
   if (carMesh) world.remove(carMesh);
   carMesh = vehicleMesh(w.vehicle, state.skin); world.add(carMesh); world.add(blob); debris.length = 0;
+  if (!endless && fails >= 2 && level.hint && st !== level.retry2) { let rx = releaseX(level); if (rx !== null) {
+    rx = Math.max(rx, st[0] + 5);   // never under the respawned car: a few metres ahead of the checkpoint
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.4), new THREE.MeshBasicMaterial({ map: textTexture(t('letGo'), { bg: '#ffe066', fg: '#2a1a0a', size: 92 }), transparent: true, opacity: 0.95 }));
+    m.rotation.x = -Math.PI / 2; m.position.set(rx + 0.6, groundYAt(rx) + 0.04, 0); world.add(m);
+  } }
   castAll(world);
   buildBackground(w);
   camX = 0; camY = 0;
@@ -681,10 +686,10 @@ function fail(reason) {
   if (reason !== 'fell') hitStop = 0.09;
   // the crash itself is the joke: the car gets thrown, spinning, and stays in frame
   if (reason !== 'fell') for (const q of car.p) { const sgn = q.x > c.x ? 1 : -1; q.vx = q.vx * 0.3 - 3; q.vy = 7 + sgn * 4; }
-  if (level.hint) { $('tut').textContent = t(level.hint); $('tut').classList.remove('hidden'); }
+  if (level.hint) { $('tut').textContent = t(level.hint); $('tut').classList.remove('hidden'); showTip(t(level.hint)); }
   if (endless) { setTimeout(endlessOver, 700); return; }
   if (fails >= 3 && platform.hasRewarded) showHelpers();
-  setTimeout(() => { restart(); started = true; platform.gameplayStart(); }, 750);
+  setTimeout(() => { restart(); started = true; platform.gameplayStart(); }, 550);
 }
 // the finish is solid: the win registers at the line, the car brakes, its bumper taps the pole, which bends on a
 // spring and wobbles back. The pole stands FLAG_GAP past the win line, so the car stops at it, not through it.
@@ -700,6 +705,19 @@ function updateFlagKnock(dt) {
   for (let i = 0; i < n; i++) { k.v += (-90 * k.ang - 5 * k.v) * h; k.ang += k.v * h; }
   k.ang = Math.max(-1.25, k.ang); if (k.ang > 0) { k.ang = 0; k.v *= -0.25; }   // the car blocks the back-swing
   flag.rotation.z = k.ang;
+}
+// the fail teaches: a big tip card under the stamp, then (from the 2nd fail) a LET GO marking on the road
+let tipTimer = 0;
+function showTip(text) { const el = $('tipCard'); el.querySelector('span').textContent = text; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); clearTimeout(tipTimer); tipTimer = setTimeout(() => el.classList.remove('on'), 3600); }
+const releaseCache = {};
+function releaseX(lv) {   // where the level's own solution first lets go of the gas (null if it never needs to)
+  if (lv.name in releaseCache) return releaseCache[lv.name];
+  let x = null;
+  if (lv.solve && lv.solve.length > 1 || (lv.solve && lv.solve[0][1] < 20)) {
+    const r = buildLevel(lv), c = makeCar(lv.start[0], lv.start[1], carOf(lv));
+    for (let s = 0; s * DT < 12; s++) { const h = holdAt(lv.solve, s * DT); if (!h) { x = carCenter(c).x; break; } c.hold = h; c.gravityScale = r.gravityScale; updateLevel(r, c, DT, stepCar(c, h, r.colliders)); }
+  }
+  return (releaseCache[lv.name] = x);
 }
 function stamp(text) { const el = $('stamp'); el.firstElementChild.textContent = text; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
 // a coin flies from the road to the coin chip
@@ -1060,7 +1078,7 @@ function updateCamera(dt) {
   camY += (targetY - camY) * Math.min(1, dt * 4);
   const sh = fx.shakeOffset();
   camPunch = Math.max(0, camPunch - dt * 4);
-  const fovNow = 50 + 3.2 * Math.sin(Math.min(1, camPunch) * Math.PI * 0.5) * camPunch;   // launch punch, settles in ~0.25 s
+  const fovNow = 50 + 4.2 * Math.sin(Math.min(1, camPunch) * Math.PI * 0.5) * camPunch;   // launch punch, settles in ~0.25 s
   if (Math.abs(camera.fov - fovNow) > 0.01) { camera.fov = fovNow; camera.updateProjectionMatrix(); }
   camera.position.set(camX - camPunch * 0.35 + (Math.random() - 0.5) * sh, camY + dist * 0.14 + (Math.random() - 0.5) * sh, dist);
   camera.lookAt(camX, camY, 0);
