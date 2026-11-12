@@ -1,0 +1,8 @@
+Tricky Road 3D — third-party assets
+
+Sounds: Kenney (www.kenney.nl), CC0 1.0 (public domain): Interface Sounds, Impact Sounds, Music Jingles,
+  Starter Kit 3D Platformer
+Font: Rubik, SIL Open Font License 1.1 (see fonts/OFL.txt)
+Engine: three.js r160, MIT License
+3D models: built in code for this game
+Music: procedural, made in code for this game
