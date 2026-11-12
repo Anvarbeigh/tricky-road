@@ -669,6 +669,7 @@ function fail(reason) {
   failing = true; fails++; $('failText').textContent = fails;
   platform.gameplayStop();
   audio.play(reason === 'fell' ? 'whoosh' : 'crash', { vol: 0.9 });
+  setTimeout(() => audio.play('lose', { vol: 0.85 }), reason === 'fell' ? 200 : 300);   // a soft pizzicato 'oops', never a buzzer
   audio.engine(0, 0, false);
   const c = carCenter(car);
   fx.burst({ x: c.x, y: c.y + 0.5, z: 0 }, 0xff6b3d, 26, 6); fx.burst({ x: c.x, y: c.y + 0.5, z: 0 }, 0x333333, 12, 4);
@@ -1142,5 +1143,5 @@ boot();
 
 if (platform.name === 'local' || (new URLSearchParams(location.search).has('debug') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) window.__game = {
   get state() { return state; }, get car() { return car; }, get run() { return run; }, startLevel, startEndless, fail, win, platform, get paused() { return paused; }, get panel() { return panelOpen; }, audio, get started() { return started; },
-  setHold(v) { hold = v; }, get info() { return renderer.info.render; }, get camX() { return camera.position.x; }, get carX() { return carMesh.position.x; }, get flagState() { return flag && { x: flag.position.x, rz: flag.rotation.z, knock: flag.knock }; }, step(n) { for (let i = 0; i < n; i++) step(); }, adDue() { lastAd = 0; levelsSinceAd = 9; }, openPanel, closePanels, get level() { return levelIndex; },
+  setHold(v) { hold = v; }, measureMix: (s) => audio.measureMix(s), get info() { return renderer.info.render; }, get camX() { return camera.position.x; }, get carX() { return carMesh.position.x; }, get flagState() { return flag && { x: flag.position.x, rz: flag.rotation.z, knock: flag.knock }; }, step(n) { for (let i = 0; i < n; i++) step(); }, adDue() { lastAd = 0; levelsSinceAd = 9; }, openPanel, closePanels, get level() { return levelIndex; },
 };

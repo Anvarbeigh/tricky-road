@@ -1,7 +1,7 @@
 // Sound effects (small mp3 files), a procedural engine hum and a light procedural music loop, all through one
 // AudioContext. Browsers only allow audio after a user gesture: call audio.unlock() from input handlers.
 
-const SFX = ['buy', 'click', 'close', 'coin', 'crack', 'crash', 'error', 'jump', 'land', 'open', 'thud', 'unlock', 'whoosh', 'win'];
+const SFX = ['buy', 'click', 'close', 'coin', 'crack', 'crash', 'error', 'jump', 'land', 'lose', 'open', 'thud', 'unlock', 'whoosh', 'win'];
 
 let ctx = null, master = null, sfxGain = null, musicGain = null, engGain = null, engOsc = null, engOsc2 = null;
 const buffers = {};
@@ -13,11 +13,11 @@ function makeCtx() {
   master = ctx.createGain(); master.connect(ctx.destination);
   sfxGain = ctx.createGain(); sfxGain.connect(master);
   musicGain = ctx.createGain(); musicGain.gain.value = 0.0; musicGain.connect(master);
-  // engine: two detuned saws through a low-pass, volume and pitch follow the car
+  // engine: a soft toy-motor hum (triangle + sine, low-passed), volume and pitch follow the car
   engGain = ctx.createGain(); engGain.gain.value = 0;
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-  engOsc = ctx.createOscillator(); engOsc.type = 'sawtooth'; engOsc.frequency.value = 60;
-  engOsc2 = ctx.createOscillator(); engOsc2.type = 'square'; engOsc2.frequency.value = 61;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = 0.4;
+  engOsc = ctx.createOscillator(); engOsc.type = 'triangle'; engOsc.frequency.value = 60;
+  engOsc2 = ctx.createOscillator(); engOsc2.type = 'sine'; engOsc2.frequency.value = 61;
   engOsc.connect(lp); engOsc2.connect(lp); lp.connect(engGain); engGain.connect(sfxGain);
   engOsc.start(); engOsc2.start();
   for (const name of SFX) {
@@ -33,9 +33,10 @@ function apply() {
   if (audible && ctx.state === 'suspended') ctx.resume().catch(() => {});
   if (!audible && ctx.state === 'running') ctx.suspend().catch(() => {});
   sfxGain.gain.value = soundOn ? 1 : 0;
-  musicGain.gain.setTargetAtTime(musicOn ? 0.14 : 0, ctx.currentTime, 0.3);
+  musicGain.gain.setTargetAtTime(musicOn ? MUSIC_LEVEL : 0, ctx.currentTime, 0.3);
 }
 
+const MUSIC_LEVEL = 0.62;   // set so the music sits ~7 dB under the effects (tools/test_audio.mjs)
 // --- procedural music: bouncy I–vi–IV–V loop, plucky lead + bass + hats --------------------------------
 const BPM = 126, STEP = 60 / BPM / 2;
 const CHORDS = [[62, 66, 69], [59, 62, 66], [55, 59, 62], [57, 61, 64]]; // D Bm G A
@@ -65,21 +66,24 @@ function hat(t) {
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
   }
   const s = ctx.createBufferSource(), g = ctx.createGain(), f = ctx.createBiquadFilter();
-  f.type = 'highpass'; f.frequency.value = 7000;
-  s.buffer = noiseBuf; g.gain.value = 0.1;
+  f.type = 'bandpass'; f.frequency.value = 6000; f.Q.value = 0.7;
+  s.buffer = noiseBuf; g.gain.value = 0.035;
   s.connect(f).connect(g).connect(musicGain); s.start(t);
 }
 function scheduleMusic() {
   if (!ctx || ctx.state !== 'running') return;
   if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.05;
-  while (nextTime < ctx.currentTime + 0.4) {
+  while (nextTime < ctx.currentTime + 0.4) scheduleAt();
+}
+function scheduleAt() {
+  {
     const bar = Math.floor(stepIdx / 16) % 4, s = stepIdx % 16;
     const chord = CHORDS[bar];
     if (s % 4 === 0) note(hz(chord[0] - 24), nextTime, STEP * 3.5, 'triangle', 0.32, musicGain);
     if (s % 4 === 2) note(hz(chord[0] - 12), nextTime, STEP * 1.5, 'triangle', 0.16, musicGain);
     if (s % 8 === 4) chord.forEach((m) => note(hz(m), nextTime, STEP * 2, 'sine', 0.05, musicGain));
     const l = LEAD[bar][s];
-    if (l > 0) note(hz(l), nextTime, STEP * 1.8, 'square', 0.03, musicGain);
+    if (l > 0) note(hz(l), nextTime, STEP * 1.6, 'triangle', 0.07, musicGain);
     if (s % 2 === 1) hat(nextTime);
     nextTime += STEP; stepIdx++;
   }
@@ -89,7 +93,22 @@ for (const ev of ['touchend', 'pointerup', 'keydown']) {
   document.addEventListener(ev, () => { if (ctx && suspended === 0 && ctx.state !== 'running') ctx.resume().catch(() => {}); }, true);
 }
 
+// test hook: render `sec` seconds of the music offline and measure it against the effects (RMS of the loud part)
+async function measureMix(sec = 8) {
+  makeCtx();
+  for (let i = 0; i < 50 && Object.keys(buffers).length < SFX.length; i++) await new Promise((r) => setTimeout(r, 100));
+  const off = new OfflineAudioContext(1, 44100 * sec, 44100), saved = [ctx, musicGain, nextTime, stepIdx, noiseBuf];
+  ctx = off; musicGain = off.createGain(); musicGain.gain.value = MUSIC_LEVEL; musicGain.connect(off.destination); nextTime = 0; stepIdx = 0; noiseBuf = null;
+  while (nextTime < sec - 0.5) { const bar = Math.floor(stepIdx / 16) % 4; scheduleAt(bar); }
+  const buf = await off.startRendering();
+  [ctx, musicGain, nextTime, stepIdx, noiseBuf] = saved;
+  const rms = (d) => { let s = 0, n = 0, pk = 0; for (const v of d) pk = Math.max(pk, Math.abs(v)); for (const v of d) if (Math.abs(v) > pk * 0.05) { s += v * v; n++; } return { rms: 10 * Math.log10(s / Math.max(1, n) + 1e-12), peak: 20 * Math.log10(pk + 1e-12) }; };
+  const out = { music: rms(buf.getChannelData(0)), sfx: {} };
+  for (const k of SFX) if (buffers[k]) out.sfx[k] = rms(buffers[k].getChannelData(0));
+  return out;
+}
 export const audio = {
+  measureMix,
   unlock() {
     makeCtx();
     apply();
@@ -110,7 +129,7 @@ export const audio = {
   engine(throttle, speed, on) {
     if (!ctx || !engGain) return;
     const t = ctx.currentTime;
-    const target = on ? 0.05 + throttle * 0.07 : 0;
+    const target = on ? 0.035 + throttle * 0.045 : 0;
     engGain.gain.setTargetAtTime(target, t, 0.08);
     const f = 50 + speed * 130 + throttle * 25;
     engOsc.frequency.setTargetAtTime(f, t, 0.1);
