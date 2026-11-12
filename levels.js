@@ -251,8 +251,14 @@ export const WORLDS = [
 
 export const LEVELS = [
   // ---------------- World 1: Meadow (learn the button, meet the first lies) ----------------
-  { w: 0, name: 'l_safe', hint: 'h_brake', start: [2, 0], finish: 70, killY: -8, solve: [[0, 1.5], [3, 25]],
-    items: [flat(-6, 30), BRIDGE(30, 42, 0, { when: 'fast', v: 11, delay: 0 }), flat(42, 76), SIGN(19, 0, 's_safebridge', { lie: true }), ...COINS(34, 0.3), TREE(-3, 0), TREE(52, 0, 1.3), TREE(74, 0)] },
+  // level 1 teaches the button and gives a quick win (gate: a first-timer must clear it on the 1st or 2nd try)
+  { w: 0, name: 'l_hold', start: [2, 0], finish: 52, killY: -8, solve: [[0, 25]],
+    items: [flat(-6, 22), G([22, 0], [26, 0.7], [30, 0]), flat(30, 58), SIGN(7, 0, 's_hold'), COIN(12, 0.2), COIN(26, 1.2), COIN(40, 0.2), TREE(-3, 0), TREE(36, 0, 1.2), TREE(56, 0)] },
+
+  // the first lie; retries start just before the trap (from the 3rd try with a run-up so short that full gas stays under
+  // the limit: the game helps a stuck first-timer through), and the bridge forgives up to 13 m/s (was 11)
+  { w: 0, name: 'l_safe', hint: 'h_brake', start: [2, 0], retry: [14, 0], retry2: [27, 0], finish: 70, killY: -8, solve: [[0, 1.5], [3, 25]],
+    items: [flat(-6, 30), BRIDGE(30, 42, 0, { when: 'fast', v: 13, delay: 0 }), flat(42, 76), SIGN(19, 0, 's_safebridge', { lie: true }), ...COINS(34, 0.3), TREE(-3, 0), TREE(52, 0, 1.3), TREE(74, 0)] },
 
   { w: 0, name: 'l_gap', start: [2, 0], finish: 70, killY: -8, solve: [[0, 25]],
     items: [G([-6, 0], [26, 0], [30, 0.6]), flat(35, 75), SIGN(18, 0, 's_slow', { lie: true }), ...COINS(31, 1.6), TREE(-3, 0), TREE(50, 0)] },

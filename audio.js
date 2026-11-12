@@ -10,7 +10,13 @@ let soundOn = true, musicOn = true, suspended = 0, musicTimer = null;
 function makeCtx() {
   if (ctx) return;
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
-  master = ctx.createGain(); master.connect(ctx.destination);
+  // master bus: gentle compressor + brick-wall-ish limiter, so stacked effects never clip (gate: true peak <= -1 dBFS)
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -6; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.0005; lim.release.value = 0.08;
+  const out = ctx.createGain(); out.gain.value = 0.7;
+  master = ctx.createGain(); master.connect(comp); comp.connect(lim); lim.connect(out); out.connect(ctx.destination);
   sfxGain = ctx.createGain(); sfxGain.connect(master);
   musicGain = ctx.createGain(); musicGain.gain.value = 0.0; musicGain.connect(master);
   // engine: a soft toy-motor hum (triangle + sine, low-passed), volume and pitch follow the car

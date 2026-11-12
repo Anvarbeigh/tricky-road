@@ -497,7 +497,8 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
   const w = WORLDS[level.w];
   clearGroup(world); dyn = []; coinMeshes = []; ghost = null; ghostRun = null;
   run = buildLevel(level);
-  car = makeCar(level.start[0], level.start[1], carOf(level));
+  const st = endless || !fails ? level.start : (fails >= 2 && level.retry2) || level.retry || level.start;   // retries start just before the trap
+  car = makeCar(st[0], st[1], carOf(level));
   finished = false; failing = false; levelTime = 0; hold = false;
   const top = w.ground, side = w.dirt;
   for (const it of level.items) {
@@ -691,13 +692,13 @@ const FLAG_GAP = 2.2;
 function knockFlag() { if (flag) flag.knock = flag.knock || { ang: 0, v: 0, hit: false, sp: Math.abs(carSpeed(car)) * 0.5 }; }
 function updateFlagKnock(dt) {
   const k = flag.knock;
-  if (!k.hit && car && carMesh.position.x + 1.75 >= flag.position.x) {
+  if (!k.hit && car && carMesh.position.x + 2.15 >= flag.position.x) {
     k.hit = true; const sp = Math.max(k.sp || 0, 3);
     k.v = -(5 + sp * 1.2); audio.play('thud', { vol: 0.6 }); fx.burst({ x: flag.position.x, y: flag.position.y + 1, z: 0.4 }, 0xffffff, 8, 3);
   }
   const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
   for (let i = 0; i < n; i++) { k.v += (-90 * k.ang - 5 * k.v) * h; k.ang += k.v * h; }
-  k.ang = Math.max(-1.25, k.ang); if (k.ang > 0.1) { k.ang = 0.1; k.v *= -0.3; }   // the car blocks the back-swing
+  k.ang = Math.max(-1.25, k.ang); if (k.ang > 0) { k.ang = 0; k.v *= -0.25; }   // the car blocks the back-swing
   flag.rotation.z = k.ang;
 }
 function stamp(text) { const el = $('stamp'); el.firstElementChild.textContent = text; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
@@ -947,8 +948,17 @@ platform.onResume = () => resume();
 platform.onAudio = (on) => { if (on) audio.resume(); else audio.suspend(); };
 if (!platform.ownPauseEvents) document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else resume(); });
 
-const press = (e) => { if (e && e.target && e.target.closest && e.target.closest('button, .cell, .panel')) return; audio.unlock(); hold = true; if (!failing && fails === 0) setTimeout(() => $('tut').classList.add('hidden'), 1400); };
+const press = (e) => { if (e && e.target && e.target.closest && e.target.closest('button, .cell, .panel')) return; audio.unlock(); if (!hold) gasKick(); hold = true; if (!failing && fails === 0) setTimeout(() => $('tut').classList.add('hidden'), 1400); };
 const release = () => { hold = false; };
+// the press answers on the very next frame: nose lifts, wheels spin up, exhaust/dust puff, a small camera punch
+let camPunch = 0;
+function gasKick() {
+  if (!started || paused || failing || finished || !car || !carMesh) return;
+  pitchV += 2.6; wheelSpin += 1.2; camPunch = 1;
+  const rx = car.p[0].x, ry = car.p[0].y - WHEEL_R;
+  for (let i = 0; i < 4; i++) fx.dust({ x: rx - 0.2 - i * 0.15, y: ry + 0.1, z: 0.6 }, WORLDS[level.w].id === 'moon' ? 0xc0c4d4 : 0xe8dcc0);
+  fx.dust({ x: rx - 1.4, y: ry + 0.55, z: -0.3 }, 0xb8bcc8);   // exhaust puff
+}
 $('gas').addEventListener('pointerdown', (e) => { e.preventDefault(); press(e); });
 window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release);
 window.addEventListener('blur', release);
@@ -1010,6 +1020,9 @@ function step() {
     else if (ev.name === 'rumble') audio.play('crack', { rate: 0.6 });
   }
   run.events.length = 0;
+  for (const e of run.ents) if (e.it.k === 'bridge' && e.judged && e.state === 'idle' && !e.praised && carCenter(car).x > e.it.x1 + 0.5) {
+    e.praised = true; toast(t('nice'), 900); audio.play('coin', { vol: 0.8, rate: 1.25 }); fx.sparkle({ x: e.it.x1, y: e.it.y + 1.5, z: 0 }, 0x9cff7a, 14);
+  }
   if (!finished) {
     if (car.crashed) fail(car.crashReason);
     else if (carCenter(car).y < level.killY) fail('fell');
@@ -1035,7 +1048,7 @@ function updateCamera(dt) {
   const follow = ghost && ghostCar ? ghostCar : car;
   const c = carCenter(follow === car && rcar.p.length && prevOwner === car ? rcar : follow);
   const sp = carSpeed(follow), s01 = Math.min(1, Math.abs(sp) / 15);
-  const aspect = camera.aspect, vfov = camera.fov * Math.PI / 180;
+  const aspect = camera.aspect, vfov = 50 * Math.PI / 180;   // framing uses the base fov, so the launch punch shows
   // framing: big car near the left, road about 2/3 down; pulling back with speed keeps the next trap in view
   const wantW = aspect > 1 ? 12.5 + s01 * 4.6 : 7.8 + s01 * 2.1;
   camW = camW ? camW + (wantW - camW) * Math.min(1, dt * 2.2) : wantW;
@@ -1046,7 +1059,10 @@ function updateCamera(dt) {
   camX += (targetX - camX) * Math.min(1, dt * 6);
   camY += (targetY - camY) * Math.min(1, dt * 4);
   const sh = fx.shakeOffset();
-  camera.position.set(camX + (Math.random() - 0.5) * sh, camY + dist * 0.14 + (Math.random() - 0.5) * sh, dist);
+  camPunch = Math.max(0, camPunch - dt * 4);
+  const fovNow = 50 + 3.2 * Math.sin(Math.min(1, camPunch) * Math.PI * 0.5) * camPunch;   // launch punch, settles in ~0.25 s
+  if (Math.abs(camera.fov - fovNow) > 0.01) { camera.fov = fovNow; camera.updateProjectionMatrix(); }
+  camera.position.set(camX - camPunch * 0.35 + (Math.random() - 0.5) * sh, camY + dist * 0.14 + (Math.random() - 0.5) * sh, dist);
   camera.lookAt(camX, camY, 0);
   if (SHADOWS) { sun.position.set(camX - 20, camY + 40, 30); sun.target.position.set(camX, camY, 0); }
   bg.position.x = camX * 0.72; bg.position.y = camY * 0.5 + (aspect > 1 ? 0 : H * 0.24);
@@ -1098,7 +1114,7 @@ function frame(now) {
     while (acc >= DT) {
       acc -= DT; snap();
       for (const q of car.p) { q.vx *= 0.975; }
-      if (flag && carCenter(car).x + 1.7 >= flag.position.x) for (const q of car.p) { q.vx = Math.min(q.vx, 0); }   // the bumper meets the pole: stop dead
+      if (flag && carCenter(car).x + 2.05 >= flag.position.x) for (const q of car.p) { q.vx = Math.min(q.vx, 0); }   // the bumper meets the pole: stop dead
       stepCar(car, false, run.colliders);
       wheelSpin += Math.abs(carSpeed(car)) * DT / WHEEL_R;
       if (Math.abs(carSpeed(car)) > 2 && Math.random() < 0.25) fx.dust({ x: car.p[0].x, y: car.p[0].y - WHEEL_R + 0.1, z: 0.7 }, 0xd8cdb0);
