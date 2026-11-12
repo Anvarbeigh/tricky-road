@@ -455,7 +455,7 @@ function vehicleMesh(kind, skin) {
 let run = null, car = null, level = null, levelIndex = 0, carMesh = null, ghost = null, ghostRun = null, ghostCar = null, ghostT = 0;
 let dyn = [];          // [{e, mesh, kind}] meshes that follow entity state
 let coinMeshes = [], flag = null, started = false, paused = 0, hold = false, fails = 0, levelTime = 0, finished = false, failing = false;
-let frameDt = 1 / 60, coastT = 0, hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = Date.now(), levelsSinceAd = 0, endless = false, endlessDist = 0;
+let trapArrow = null, frameDt = 1 / 60, coastT = 0, hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = Date.now(), levelsSinceAd = 0, endless = false, endlessDist = 0;
 
 function clearGroup(g) {
   while (g.children.length) { const c = g.children.pop(); c.traverse((o) => { if (o.geometry && !Object.values(GEO).includes(o.geometry)) o.geometry.dispose(); }); }
@@ -497,7 +497,7 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
   const w = WORLDS[level.w];
   clearGroup(world); dyn = []; coinMeshes = []; ghost = null; ghostRun = null;
   run = buildLevel(level);
-  const st = endless || !fails ? level.start : (fails >= 3 && level.retry2) || level.retry || level.start;   // retries start just before the trap
+  const st = endless || !fails ? level.start : (fails >= 4 && level.retry2) || level.retry || level.start;   // retries start just before the trap
   car = makeCar(st[0], st[1], carOf(level));
   finished = false; failing = false; levelTime = 0; hold = false;
   const top = w.ground, side = w.dirt;
@@ -581,7 +581,14 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
   coastT = 0; landed = true; lastVy = 0; lastGroundY = level.start[1]; pitchV = 0; pitch = 0; bounce = 0; bounceV = 0; prevSpeed = 0; camW = 0;
   if (carMesh) world.remove(carMesh);
   carMesh = vehicleMesh(w.vehicle, state.skin); world.add(carMesh); world.add(blob); debris.length = 0;
-  if (!endless && fails >= 2 && level.hint && st !== level.retry2) { let rx = releaseX(level); if (rx !== null) {
+  trapArrow = null;
+  if (!endless && fails >= 2 && level.trapX && st !== level.retry2) {   // a bobbing arrow over the trap: look here
+    const ax = level.trapX, ay = groundYAt(ax) + 3.2, a = new THREE.Group();
+    const tip = new THREE.Mesh(GEO.cone, new THREE.MeshBasicMaterial({ color: 0xffd23a })); tip.scale.set(0.55, 0.8, 0.55); tip.rotation.z = Math.PI; a.add(tip);
+    const stem = new THREE.Mesh(GEO.box, new THREE.MeshBasicMaterial({ color: 0xffd23a })); stem.scale.set(0.32, 0.8, 0.32); stem.position.y = 0.75; a.add(stem);
+    a.position.set(ax, ay, 0.6); a.baseY = ay; world.add(a); trapArrow = a;
+  }
+  if (!endless && fails >= 3 && level.hint && st !== level.retry2) { let rx = releaseX(level); if (rx !== null) {
     rx = Math.max(rx, st[0] + 5);   // never under the respawned car: a few metres ahead of the checkpoint
     const m = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.4), new THREE.MeshBasicMaterial({ map: textTexture(t('letGo'), { bg: '#ffe066', fg: '#2a1a0a', size: 92 }), transparent: true, opacity: 0.95 }));
     m.rotation.x = -Math.PI / 2; m.position.set(rx + 0.6, groundYAt(rx) + 0.04, 0); world.add(m);
@@ -686,7 +693,8 @@ function fail(reason) {
   if (reason !== 'fell') hitStop = 0.09;
   // the crash itself is the joke: the car gets thrown, spinning, and stays in frame
   if (reason !== 'fell') for (const q of car.p) { const sgn = q.x > c.x ? 1 : -1; q.vx = q.vx * 0.3 - 3; q.vy = 7 + sgn * 4; }
-  if (level.hint) { $('tut').textContent = t(level.hint); $('tut').classList.remove('hidden'); showTip(t(level.hint)); }
+  // the 2nd fail gets a nudge that points at the trap without the answer (the answer would kill the puzzle)
+  if (level.hint && fails >= 2) showTip(t(level.hint.replace('h_', 'n_')));
   if (endless) { setTimeout(endlessOver, 700); return; }
   if (fails >= 3 && platform.hasRewarded) showHelpers();
   setTimeout(() => { restart(); started = true; platform.gameplayStart(); }, 550);
@@ -1057,6 +1065,7 @@ function syncDyn() {
     else if (d.kind === 'door') { d.mesh.position.y = (d.it.y0 + d.it.y1) / 2 + d.h * e.open; d.st.position.y = d.it.y0 + d.h * 0.5 + d.h * e.open; }
   }
   for (const [i, m] of coinMeshes.entries()) { const c = run.coins[i]; m.visible = !c.got; m.rotation.z = simT * 3; }
+  if (trapArrow) { trapArrow.position.y = trapArrow.baseY + Math.abs(Math.sin(simT * 4)) * 0.45; trapArrow.rotation.y += frameDt * 2; }
   if (flag && flag.knock) updateFlagKnock(frameDt);
   if (flag) { flag.position.x += (run.finishX + FLAG_GAP - flag.position.x) * 0.2; const ff = run.ents.find((e) => e.it.k === 'fakeflag'); flag.position.y = groundYAt(flag.position.x) + (ff ? ff.hop * 1.2 : 0); const p = flag.flag.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(simT * 8 + p.getX(i) * 4) * 0.08 * (p.getX(i) + 0.8)); p.needsUpdate = true; }
   if (ghost && ghostCar) { const c = carCenter(ghostCar); ghost.position.set(c.x, c.y, 0.02); ghost.rotation.z = carAngle(ghostCar); }
