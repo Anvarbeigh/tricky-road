@@ -22,7 +22,7 @@ const SKINS = [
 const GIFT = [100, 50, 25];
 const AD_GAP_MS = 3 * 60 * 1000;
 const state = {
-  coins: 0, stars: {}, skins: [0], skin: 0, cur: 0, best: 0, giftDay: '', giftStreak: 0, sound: true, music: true, lastSeen: Date.now(), tut: 0, adsSeen: 0,
+  coins: 0, stars: {}, skins: [0], skin: 0, cur: 0, best: 0, giftDay: '', giftStreak: 0, sound: true, music: true, shake: false, lastSeen: Date.now(), tut: 0, adsSeen: 0,
 };
 function load(raw) {
   try {
@@ -689,7 +689,7 @@ function fail(reason) {
   audio.engine(0, 0, false);
   const c = carCenter(car);
   fx.burst({ x: c.x, y: c.y + 0.5, z: 0 }, 0xff6b3d, 26, 6); fx.burst({ x: c.x, y: c.y + 0.5, z: 0 }, 0x333333, 12, 4);
-  if (reason !== 'fell') fx.shake(0.4);
+  if (reason !== 'fell' && state.shake) fx.shake(0.4);   // camera shake is OFF unless the player turns it on
   if (reason !== 'fell') { spawnDebris(c.x, c.y, [SKINS[state.skin].body, 0x23242e, 0xe6e8f0, 0x7fe3ff], 12); }
   $('flash').style.opacity = 0.45; setTimeout(() => { $('flash').style.opacity = 0; }, 120);
   stamp(level.hint ? t('gotcha') : t(reason === 'fell' ? 'fell' : reason)); $('failChip').classList.remove('hit'); void $('failChip').offsetWidth; $('failChip').classList.add('hit');
@@ -951,7 +951,7 @@ function renderSettings(asPause) {
   $('settingsTitle').textContent = asPause ? t('paused') : t('settings');
   const b = $('settingsBody'); b.innerHTML = '';
   if (!platform.ownAudioControl) {
-    for (const [key, get, set] of [['sound', () => state.sound, (v) => { state.sound = v; audio.setSound(v); }], ['music', () => state.music, (v) => { state.music = v; audio.setMusic(v); }]]) {
+    for (const [key, get, set] of [['sound', () => state.sound, (v) => { state.sound = v; audio.setSound(v); }], ['music', () => state.music, (v) => { state.music = v; audio.setMusic(v); }], ['shake', () => state.shake, (v) => { state.shake = v; }]]) {
       const row = document.createElement('div'); row.className = 'row toggle';
       row.innerHTML = `<div class="txt"><b>${t(key)}</b></div>`;
       const btn = document.createElement('button'); btn.className = 'btn ' + (get() ? 'green' : 'grey'); btn.textContent = get() ? 'ON' : 'OFF';
@@ -975,17 +975,28 @@ function resume() { if (paused > 0 && --paused === 0) { last = performance.now()
 platform.onPause = () => pause();
 platform.onResume = () => resume();
 platform.onAudio = (on) => { if (on) audio.resume(); else audio.suspend(); };
-if (!platform.ownPauseEvents) document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else resume(); });
+// silence + pause whenever the game is not in front (tab hidden, window blurred, page closed); resume on return.
+// One flag, so pause()/resume() stay balanced however many of these events fire.
+let away = false;
+function setAway(v) { if (v === away) return; away = v; if (v) { release(); pause(); } else resume(); }
+if (!platform.ownPauseEvents) {
+  document.addEventListener('visibilitychange', () => setAway(document.hidden || !document.hasFocus()));
+  window.addEventListener('blur', () => setAway(true));
+  window.addEventListener('focus', () => setAway(document.hidden));
+  window.addEventListener('pagehide', () => setAway(true));
+  window.addEventListener('pageshow', () => setAway(document.hidden || !document.hasFocus()));
+}
 
 const press = (e) => { if (e && e.target && e.target.closest && e.target.closest('button, .cell, .panel')) return; audio.unlock(); if (!hold) gasKick(); hold = true; $('pedal').classList.add('on'); if (!failing && fails === 0) setTimeout(() => $('tut').classList.add('hidden'), 1400); };
 const release = () => { hold = false; $('pedal').classList.remove('on'); };
 // the press answers on the very next frame: nose lifts, wheels spin up, exhaust/dust puff, a small camera punch
 function gasKick() {
   if (!started || paused || failing || finished || !car || !carMesh) return;
-  pitchV += 2.6; wheelSpin += 1.2;   // the car answers the press; the camera never does (no punch, no shake)
-  const rx = car.p[0].x, ry = car.p[0].y - WHEEL_R;
-  for (let i = 0; i < 8; i++) fx.dust({ x: rx - 0.2 - i * 0.12, y: ry + 0.1 + (i % 3) * 0.08, z: 0.6 }, WORLDS[level.w].id === 'moon' ? 0xc0c4d4 : 0xe8dcc0);
-  fx.dust({ x: rx - 1.4, y: ry + 0.55, z: -0.3 }, 0xb8bcc8);   // exhaust puff
+  // the car answers the press in the very next frame (purely cosmetic, physics untouched); the camera never does
+  pitch = Math.max(pitch, 0.13); pitchV += 3.2; bounce = Math.min(bounce, -0.22); wheelSpin += 1.6;   // nose up + rear squat at once
+  const rx = car.p[0].x, ry = car.p[0].y - WHEEL_R, moon = WORLDS[level.w].id === 'moon';
+  fx.puff({ x: rx - 0.4, y: ry + 0.15, z: 0.7 }, moon ? 0xd6dbef : 0xf2ead8, 12, 1.25);   // launch cloud
+  fx.puff({ x: rx - 1.5, y: ry + 0.55, z: -0.2 }, 0xc8ccd6, 4, 0.9);                      // exhaust
 }
 $('gas').addEventListener('pointerdown', (e) => { e.preventDefault(); press(e); });
 window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release);

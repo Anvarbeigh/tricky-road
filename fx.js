@@ -68,6 +68,10 @@ export const fx = {
   dust(p, color = 0xe8dcc0) {
     emit(p.x + r(-0.3, 0.3), p.y + 0.1, p.z + r(-0.3, 0.3), { vx: r(-0.6, 0.6), vy: r(0.5, 1.2), vz: r(-0.6, 0.6), life: r(0.35, 0.6), size: r(0.35, 0.6), color, g: 0, drag: 0.94 });
   },
+  // a big soft cloud (launch / skid): larger, longer-lived particles than dust
+  puff(p, color = 0xf2ead8, n = 10, size = 1.2) {
+    for (let k = 0; k < n; k++) emit(p.x + r(-0.6, 0.2), p.y + r(0, 0.5), p.z + r(-0.4, 0.4), { vx: r(-2.6, -0.6), vy: r(0.6, 1.8), vz: r(-0.5, 0.5), life: r(0.45, 0.8), size: r(size * 0.7, size * 1.2), color, g: 0, drag: 0.9 });
+  },
   burst(p, color, n = 24, speed = 6) {
     for (let k = 0; k < n; k++) {
       const a = r(0, Math.PI * 2), e = r(-0.2, 1);
