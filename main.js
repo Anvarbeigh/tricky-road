@@ -455,7 +455,7 @@ function vehicleMesh(kind, skin) {
 let run = null, car = null, level = null, levelIndex = 0, carMesh = null, ghost = null, ghostRun = null, ghostCar = null, ghostT = 0;
 let dyn = [];          // [{e, mesh, kind}] meshes that follow entity state
 let coinMeshes = [], flag = null, started = false, paused = 0, hold = false, fails = 0, levelTime = 0, finished = false, failing = false;
-let hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = 0, levelsSinceAd = 0, endless = false, endlessDist = 0;
+let frameDt = 1 / 60, coastT = 0, hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = 0, levelsSinceAd = 0, endless = false, endlessDist = 0;
 
 function clearGroup(g) {
   while (g.children.length) { const c = g.children.pop(); c.traverse((o) => { if (o.geometry && !Object.values(GEO).includes(o.geometry)) o.geometry.dispose(); }); }
@@ -576,8 +576,8 @@ function spawnLevel(idx, lvl = LEVELS[idx]) {
     const minY = Math.min(...gxs.map((p) => p[1])), x0 = Math.min(...gxs.map((p) => p[0])) - 40, x1 = Math.max(...gxs.map((p) => p[0])) + 40;
     world.add(box(x1 - x0, 80, 0.2, shade(side, 0.24), (x0 + x1) / 2, minY - 0.5 - 40, -1.75));
   }
-  flag = flagMesh(); flag.position.set(run.finishX, groundYAt(run.finishX), 0); world.add(flag);
-  landed = true; lastVy = 0; lastGroundY = level.start[1]; pitchV = 0; pitch = 0; bounce = 0; bounceV = 0; prevSpeed = 0; camW = 0;
+  flag = flagMesh(); flag.position.set(run.finishX + FLAG_GAP, groundYAt(run.finishX + FLAG_GAP), 0); world.add(flag);
+  coastT = 0; landed = true; lastVy = 0; lastGroundY = level.start[1]; pitchV = 0; pitch = 0; bounce = 0; bounceV = 0; prevSpeed = 0; camW = 0;
   if (carMesh) world.remove(carMesh);
   carMesh = vehicleMesh(w.vehicle, state.skin); world.add(carMesh); world.add(blob); debris.length = 0;
   castAll(world);
@@ -618,7 +618,8 @@ function updateDebris(dt) {
   }
 }
 function updateCar(dt = 0) {
-  const c = carCenter(car), a = carAngle(car);
+  const pose = rcar.p.length && prevOwner === car ? rcar : car;
+  const c = carCenter(pose), a = carAngle(pose);
   const gy = groundYAt(c.x), hgt = c.y - gy;
   blob.visible = hgt > 0 && hgt < 7;
   if (blob.visible) { const k = Math.max(0.35, 1 - hgt / 7); blob.position.set(c.x, gy + 0.03, 0); blob.scale.set(1.9 * k, 0.95 * k, 1); blob.material.opacity = 0.34 * k; }
@@ -683,6 +684,21 @@ function fail(reason) {
   if (fails >= 3 && platform.hasRewarded) showHelpers();
   setTimeout(() => { restart(); started = true; platform.gameplayStart(); }, 750);
 }
+// the finish is solid: the win registers at the line, the car brakes, its bumper taps the pole, which bends on a
+// spring and wobbles back. The pole stands FLAG_GAP past the win line, so the car stops at it, not through it.
+const FLAG_GAP = 2.2;
+function knockFlag() { if (flag) flag.knock = flag.knock || { ang: 0, v: 0, hit: false, sp: Math.abs(carSpeed(car)) * 0.5 }; }
+function updateFlagKnock(dt) {
+  const k = flag.knock;
+  if (!k.hit && car && carMesh.position.x + 1.75 >= flag.position.x) {
+    k.hit = true; const sp = Math.max(k.sp || 0, 3);
+    k.v = -(5 + sp * 1.2); audio.play('thud', { vol: 0.6 }); fx.burst({ x: flag.position.x, y: flag.position.y + 1, z: 0.4 }, 0xffffff, 8, 3);
+  }
+  const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
+  for (let i = 0; i < n; i++) { k.v += (-90 * k.ang - 5 * k.v) * h; k.ang += k.v * h; }
+  k.ang = Math.max(-1.25, k.ang); if (k.ang > 0.1) { k.ang = 0.1; k.v *= -0.3; }   // the car blocks the back-swing
+  flag.rotation.z = k.ang;
+}
 function stamp(text) { const el = $('stamp'); el.firstElementChild.textContent = text; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
 // a coin flies from the road to the coin chip
 const _v = new THREE.Vector3();
@@ -705,6 +721,7 @@ function showHelpers() {
 }
 function win() {
   finished = true; started = false; platform.gameplayStop(); audio.engine(0, 0, false);
+  coastT = 0.9; knockFlag();
   audio.play('win', { vol: 0.9 });
   const c = carCenter(car);
   fx.confetti({ x: c.x, y: c.y + 2, z: 0 }, 60); bounceV = 7;
@@ -1008,13 +1025,14 @@ function syncDyn() {
     else if (d.kind === 'door') { d.mesh.position.y = (d.it.y0 + d.it.y1) / 2 + d.h * e.open; d.st.position.y = d.it.y0 + d.h * 0.5 + d.h * e.open; }
   }
   for (const [i, m] of coinMeshes.entries()) { const c = run.coins[i]; m.visible = !c.got; m.rotation.z = simT * 3; }
-  if (flag) { flag.position.x += (run.finishX - flag.position.x) * 0.2; const ff = run.ents.find((e) => e.it.k === 'fakeflag'); flag.position.y = groundYAt(flag.position.x) + (ff ? ff.hop * 1.2 : 0); const p = flag.flag.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(simT * 8 + p.getX(i) * 4) * 0.08 * (p.getX(i) + 0.8)); p.needsUpdate = true; }
+  if (flag && flag.knock) updateFlagKnock(frameDt);
+  if (flag) { flag.position.x += (run.finishX + FLAG_GAP - flag.position.x) * 0.2; const ff = run.ents.find((e) => e.it.k === 'fakeflag'); flag.position.y = groundYAt(flag.position.x) + (ff ? ff.hop * 1.2 : 0); const p = flag.flag.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(simT * 8 + p.getX(i) * 4) * 0.08 * (p.getX(i) + 0.8)); p.needsUpdate = true; }
   if (ghost && ghostCar) { const c = carCenter(ghostCar); ghost.position.set(c.x, c.y, 0.02); ghost.rotation.z = carAngle(ghostCar); }
 }
 function updateCamera(dt) {
   // while the ghost shows the trap, the camera rides with the ghost
   const follow = ghost && ghostCar ? ghostCar : car;
-  const c = carCenter(follow);
+  const c = carCenter(follow === car && rcar.p.length && prevOwner === car ? rcar : follow);
   const sp = carSpeed(follow), s01 = Math.min(1, Math.abs(sp) / 15);
   const aspect = camera.aspect, vfov = camera.fov * Math.PI / 180;
   // framing: big car near the left, road about 2/3 down; pulling back with speed keeps the next trap in view
@@ -1034,12 +1052,27 @@ function updateCamera(dt) {
   // how far along the road
   if (run && !endless) { const k = Math.max(0, Math.min(1, (c.x - level.start[0]) / (run.finishX - level.start[0]))); $('progCar').style.left = (k * 100) + '%'; }
 }
+// Render interpolation: physics runs at a fixed 120 Hz, the screen at whatever the device gives. Drawing the raw
+// last-step pose moves the car by 1, 2 or 3 steps per frame (judder). Keep the previous step's points and draw the
+// pose between the two, so motion is even on any refresh rate and under frame drops.
+const prevP = [], rcar = { p: [] };
+let prevOwner = null;
+function snap() {
+  if (!car) return;
+  if (prevOwner !== car) { prevOwner = car; prevP.length = 0; rcar.p = car.p.map((q) => ({ x: q.x, y: q.y })); }
+  car.p.forEach((q, i) => { prevP[i] = prevP[i] || { x: 0, y: 0 }; prevP[i].x = q.x; prevP[i].y = q.y; });
+}
+function interp(alpha) {
+  if (!car) return;
+  if (prevOwner !== car || !prevP.length) snap();
+  car.p.forEach((q, i) => { const r = rcar.p[i] || (rcar.p[i] = { x: 0, y: 0 }); r.x = prevP[i].x + (q.x - prevP[i].x) * alpha; r.y = prevP[i].y + (q.y - prevP[i].y) * alpha; });
+}
 // title screen attract loop: level 1 with the gas floored, so the SAFE BRIDGE collapses on a loop behind the logo
 let attract = false, attractT = 0;
 function attractStep(dt) {
   acc += Math.min(dt, 0.05);
   while (acc >= DT) {
-    acc -= DT; simT += DT;
+    acc -= DT; simT += DT; snap();
     const touched = stepCar(car, true, run.colliders); car.hold = true; car.gravityScale = run.gravityScale;
     updateLevel(run, car, DT, touched);
     wheelSpin += Math.abs(carSpeed(car)) * DT / WHEEL_R;
@@ -1051,15 +1084,26 @@ function attractStep(dt) {
 }
 function frame(now) {
   requestAnimationFrame(frame);
-  let dt = Math.min(0.1, (now - last) / 1000); last = now;
+  let dt = Math.min(0.1, (now - last) / 1000); last = now; frameDt = dt;
   if (started && !paused && run) {
     acc += dt;
     if (hitStop > 0) { hitStop -= dt; acc = 0; }
-    else while (acc >= DT) { step(); acc -= DT; simT += DT; }
+    else while (acc >= DT) { snap(); step(); acc -= DT; simT += DT; }
     audio.engine(hold ? 1 : 0, Math.min(1, Math.abs(carSpeed(car)) / 15), !finished && !failing);
   }
   else if (attract && run && !paused) attractStep(dt);
-  if (run) { updateCar(dt); syncDyn(); updateCamera(dt); updateDebris(dt); }
+  else if (coastT > 0 && run && !paused && car) {
+    coastT -= dt; acc += Math.min(dt, 0.05);
+    while (acc >= DT) {
+      acc -= DT; snap();
+      for (const q of car.p) { q.vx *= 0.975; }
+      if (flag && carCenter(car).x + 1.7 >= flag.position.x) for (const q of car.p) { q.vx = Math.min(q.vx, 0); }   // the bumper meets the pole: stop dead
+      stepCar(car, false, run.colliders);
+      wheelSpin += Math.abs(carSpeed(car)) * DT / WHEEL_R;
+      if (Math.abs(carSpeed(car)) > 2 && Math.random() < 0.25) fx.dust({ x: car.p[0].x, y: car.p[0].y - WHEEL_R + 0.1, z: 0.7 }, 0xd8cdb0);
+    }
+  }
+  if (run) { interp((started && !paused) || attract || coastT > 0 ? Math.min(1, acc / DT) : 1); updateCar(dt); syncDyn(); updateCamera(dt); updateDebris(dt); }
   fx.update(dt);
   renderer.render(scene, camera);
 }
@@ -1098,5 +1142,5 @@ boot();
 
 if (platform.name === 'local' || (new URLSearchParams(location.search).has('debug') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) window.__game = {
   get state() { return state; }, get car() { return car; }, get run() { return run; }, startLevel, startEndless, fail, win, platform, get paused() { return paused; }, get panel() { return panelOpen; }, audio, get started() { return started; },
-  setHold(v) { hold = v; }, get info() { return renderer.info.render; }, step(n) { for (let i = 0; i < n; i++) step(); }, adDue() { lastAd = 0; levelsSinceAd = 9; }, openPanel, closePanels, get level() { return levelIndex; },
+  setHold(v) { hold = v; }, get info() { return renderer.info.render; }, get camX() { return camera.position.x; }, get carX() { return carMesh.position.x; }, get flagState() { return flag && { x: flag.position.x, rz: flag.rotation.z, knock: flag.knock }; }, step(n) { for (let i = 0; i < n; i++) step(); }, adDue() { lastAd = 0; levelsSinceAd = 9; }, openPanel, closePanels, get level() { return levelIndex; },
 };
