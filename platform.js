@@ -150,6 +150,57 @@ const adapters = {
     writeSave(s) { lsSet(s); try { this.player?.setData({ save: s }); } catch (e) { /* ignore */ } },
   },
 
+  // GameDistribution (gdsdk). build.py puts window.GD_OPTIONS (gameId + an onEvent that queues events) and the SDK
+  // <script> in <head>; this adapter drains that queue. The game already pauses + mutes around interstitial()/rewarded();
+  // SDK_GAME_PAUSE during our request = the ad really started (onStart mutes); a pause the SDK starts by itself
+  // (e.g. its own pre-roll) goes through onPause/onResume, always as one pair.
+  gamedistribution: {
+    hasRewarded: true,
+    ok: false, inAd: null, extPaused: false,
+    async init() {
+      const q = window.__gdq || [];
+      window.__gdOnEvent = (e) => this.event(e);
+      q.splice(0).forEach((e) => this.event(e));
+      // ad blockers stop the SDK script: then the game runs without ads (no dead 🎬 buttons)
+      for (let i = 0; i < 40 && !window.gdsdk && !window.__gdFailed; i++) await wait(100);
+      if (!window.gdsdk || typeof window.gdsdk.showAd !== 'function') { this.hasRewarded = false; return; }
+      this.ok = true;
+    },
+    event(e) {
+      const n = e && e.name;
+      if (n === 'SDK_GAME_PAUSE') {
+        if (this.inAd) this.inAd.started();
+        else if (!this.extPaused) { this.extPaused = true; this.onPause(); }
+      } else if (n === 'SDK_GAME_START') {
+        if (this.inAd) this.inAd.ended();
+        if (this.extPaused) { this.extPaused = false; this.onResume(); }
+      } else if (n === 'SDK_REWARDED_WATCH_COMPLETE') {
+        if (this.inAd) this.inAd.reward = true;
+      }
+    },
+    ad(type, onStart) {
+      return new Promise((resolve) => {
+        if (!this.ok || this.inAd) return resolve(false);
+        let started = false, done = false;
+        const a = (this.inAd = { reward: false });
+        const end = (shown) => {
+          if (done) return; done = true;
+          // the reward event can land just after the promise; give it a moment
+          setTimeout(() => { this.inAd = null; resolve(type === 'rewarded' ? a.reward : shown); }, type === 'rewarded' && !a.reward ? 300 : 0);
+        };
+        a.started = () => { if (!started) { started = true; onStart?.(); } };
+        a.ended = () => { if (started) end(true); };
+        const sdk = window.gdsdk;
+        const show = type === 'rewarded' && sdk.preloadAd ? sdk.preloadAd('rewarded').then(() => sdk.showAd('rewarded')) : sdk.showAd(type);
+        Promise.resolve(show).then(() => end(true), () => end(false));
+        setTimeout(() => { if (!started) end(false); }, 15000);   // no fill / stuck request: give the game back
+        setTimeout(() => end(started), 120000);                    // safety net: never freeze the game for good
+      });
+    },
+    async interstitial(onStart) { await this.ad('interstitial', onStart); },
+    rewarded(onStart) { return this.ad('rewarded', onStart); },
+  },
+
   youtube: {
     yt: null,
     ownPauseEvents: true,

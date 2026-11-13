@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="icon" href="data:,">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Tricky Road 3D</title>
@@ -38,7 +39,8 @@
   #bar { width: min(360px, 80vw); height: 22px; border-radius: 12px; background: rgba(0,0,0,.25); overflow: hidden; border: 3px solid #fff; }
   #bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffd84a, #ff9d2e); transition: width .2s; }
   #start { background: linear-gradient(rgba(10,20,50,.38), rgba(10,20,50,0) 34%, rgba(10,20,50,0) 62%, rgba(10,20,50,.45)); justify-content: space-between; padding: max(28px, env(safe-area-inset-top)) 20px max(34px, env(safe-area-inset-bottom)); }
-  #start .logo { font-size: clamp(52px, 11.5vw, 112px); }
+  #start .logo { font-size: clamp(34px, min(11.5vw, 14vh), 112px); }
+  #start { overflow-y: auto; }   /* safety net: nothing on the title can ever be unreachable */
   #start .bottom { display: flex; flex-direction: column; align-items: center; gap: 14px; }
   #start .small { display: none; }
   #start p { margin: 0; max-width: 560px; font-size: 18px; font-weight: 600; text-shadow: 0 2px 0 rgba(0,0,0,.4); }
@@ -89,7 +91,7 @@
   #gas { position: fixed; inset: 0; z-index: 5; }
 
   /* panels */
-  .panel { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8,12,30,.5); pointer-events: auto; z-index: 20; padding: 10px; }
+  .panel { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8,12,30,.5); pointer-events: auto; z-index: 40; padding: 10px; }   /* above the title screen (30): a panel opened from the title must never sit under the logo */
   .panel.open { display: flex; animation: fadeIn .15s; }
   @keyframes fadeIn { from { opacity: 0 } }
   .box { background: linear-gradient(var(--panel2), var(--panel)); border-radius: 26px; padding: 16px; width: min(560px, 100%); max-height: calc(100% - 10px); overflow: auto;
@@ -179,6 +181,31 @@
   #pedal .ico-svg { width: 38px; height: 38px; }
   #pedal.on { background: #3fcf5e; border-color: #fff; color: #fff; transform: scale(.9); transition: none; box-shadow: 0 0 0 6px rgba(63,207,94,.35); }
   body:not(.touch) #pedal { width: 84px; height: 84px; }
+  /* short screens (phone landscape): compact title so PLAY, Levels and settings always fit */
+  @media (max-height: 480px) {
+    #start { padding: max(10px, env(safe-area-inset-top)) 16px max(10px, env(safe-area-inset-bottom)); gap: 6px; }
+    #start .logo { font-size: clamp(26px, 13vh, 58px); }
+    #start .bottom { gap: 8px; }
+    #start p { font-size: 13px; }
+    #btnPlay { font-size: 22px; padding: 8px 36px; }
+    #startRow .btn { padding: 7px 14px; font-size: 15px; }
+    .box { padding: 10px 12px; border-radius: 18px; }
+    .box h2 { margin-bottom: 6px; }
+  }
+  /* short screens: panels without scrolling (levels in one row of 10, slim rows, pause buttons side by side) */
+  @media (max-height: 480px) and (min-aspect-ratio: 4/3) {
+    .grid { grid-template-columns: repeat(10, 1fr) !important; gap: 5px; }
+    .cell { font-size: 14px !important; padding: 5px 1px 3px !important; border-radius: 10px; }
+    .cell .st i .ico-svg { width: 9px; height: 9px; }
+    .row { padding: 6px 8px; margin-bottom: 5px; gap: 8px; }
+    .row .ico { width: 34px; height: 34px; } .row .ico .ico-svg { width: 20px; height: 20px; }
+    .row .txt b { font-size: 14px; } .row .txt span { font-size: 11px; }
+    .tabs { margin-bottom: 6px; } .tabs .btn { padding: 5px 9px; font-size: 13px; }
+    #settingsBody .big { width: auto; display: inline-flex; margin: 4px 3px 0; padding: 9px 14px; font-size: 16px; }
+    #settingsBody { text-align: center; } #settingsBody .row { text-align: left; }
+    .box { width: min(640px, 100%); }
+  }
+  @media (max-height: 340px) { #start p { display: none; } #start .logo small { display: none; } }
 </style>
 
 <script>window.PLATFORM = "web";</script>

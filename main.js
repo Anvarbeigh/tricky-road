@@ -458,7 +458,7 @@ function vehicleMesh(kind, skin) {
 let run = null, car = null, level = null, levelIndex = 0, carMesh = null, ghost = null, ghostRun = null, ghostCar = null, ghostT = 0;
 let dyn = [];          // [{e, mesh, kind}] meshes that follow entity state
 let coinMeshes = [], flag = null, started = false, paused = 0, hold = false, fails = 0, levelTime = 0, finished = false, failing = false;
-let trapArrow = null, frameDt = 1 / 60, coastT = 0, hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = Date.now(), levelsSinceAd = 0, endless = false, endlessDist = 0;
+let runId = 0, trapArrow = null, frameDt = 1 / 60, coastT = 0, hitStop = 0, lastGroundY = 0, antA = 0, antV = 0, camX = 0, camY = 0, camW = 0, wheelSpin = 0, dustT = 0, landed = true, lastVy = 0, pitch = 0, pitchV = 0, bounce = 0, bounceV = 0, prevSpeed = 0, lastAd = Date.now(), levelsSinceAd = 0, endless = false, endlessDist = 0;
 
 function clearGroup(g) {
   while (g.children.length) { const c = g.children.pop(); c.traverse((o) => { if (o.geometry && !Object.values(GEO).includes(o.geometry)) o.geometry.dispose(); }); }
@@ -496,6 +496,7 @@ function buildBackground(w) {
 }
 
 function spawnLevel(idx, lvl = LEVELS[idx]) {
+  runId++;   // delayed callbacks (win card, respawn, endless end) check this so they never act on a newer run
   level = lvl; levelIndex = idx;
   const w = WORLDS[level.w];
   clearGroup(world); dyn = []; coinMeshes = []; ghost = null; ghostRun = null;
@@ -698,9 +699,10 @@ function fail(reason) {
   if (reason !== 'fell') for (const q of car.p) { const sgn = q.x > c.x ? 1 : -1; q.vx = q.vx * 0.3 - 3; q.vy = 7 + sgn * 4; }
   // the 2nd fail gets a nudge that points at the trap without the answer (the answer would kill the puzzle)
   if (level.hint && fails >= 2) showTip(t(level.hint.replace('h_', 'n_')));
-  if (endless) { setTimeout(endlessOver, 700); return; }
+  const rid = runId;
+  if (endless) { setTimeout(() => { if (rid === runId) endlessOver(); }, 700); return; }
   if (fails >= 3 && platform.hasRewarded) showHelpers();
-  setTimeout(() => { restart(); started = true; platform.gameplayStart(); }, 550);
+  setTimeout(() => { if (rid !== runId) return; restart(); started = true; platform.gameplayStart(); }, 550);
 }
 // the finish is solid: the win registers at the line, the car brakes, its bumper taps the pole, which bends on a
 // spring and wobbles back. The pole stands FLAG_GAP past the win line, so the car stops at it, not through it.
@@ -779,7 +781,8 @@ function win() {
   const n = document.createElement('button'); n.className = 'btn green'; n.innerHTML = t('next') + ' ' + icon('next');
   n.onclick = () => { closePanels(true); goNext(); };
   btns.appendChild(n);
-  setTimeout(() => openPanel('winPanel'), 650);
+  const wid = runId;
+  setTimeout(() => { if (wid === runId && finished) openPanel('winPanel'); }, 650);
 }
 async function goNext() {
   const nextIdx = levelIndex + 1;

@@ -4,7 +4,7 @@
 const STR = {
   en: {
     title: 'TRICKY ROAD', docTitle: 'Tricky Road 3D',
-    tagline: 'One button. Forty roads. Never trust the signs.',
+    tagline: 'One button. Many roads. Never trust the signs.',
     play: 'PLAY', levels: 'Levels', garage: 'Garage', settings: 'Settings', sound: 'Sound', music: 'Music', shake: 'Camera shake',
     continue: 'Continue', retry: 'Retry', next: 'Next', back: 'Back', close: 'Close', take: 'Take',
     controlsPc: 'Hold SPACE or click — gas · release — brake · in the air: hold = nose up',
@@ -29,7 +29,7 @@ const STR = {
   },
   ru: {
     title: 'ХИТРАЯ ДОРОГА', docTitle: 'Хитрая дорога 3D',
-    tagline: 'Одна кнопка. Сорок дорог. Не верь знакам.',
+    tagline: 'Одна кнопка. Много дорог. Не верь знакам.',
     play: 'ИГРАТЬ', levels: 'Уровни', garage: 'Гараж', settings: 'Настройки', sound: 'Звук', music: 'Музыка', shake: 'Тряска камеры',
     continue: 'Дальше', retry: 'Заново', next: 'Далее', back: 'Назад', close: 'Закрыть', take: 'Забрать',
     controlsPc: 'Держи ПРОБЕЛ или клик — газ · отпусти — тормоз · в воздухе: держи = нос вверх',
